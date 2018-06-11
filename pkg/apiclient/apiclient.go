@@ -15,6 +15,7 @@ import (
 	"github.com/argoproj/argo-cd/server/cluster"
 	"github.com/argoproj/argo-cd/server/repository"
 	"github.com/argoproj/argo-cd/server/session"
+	"github.com/argoproj/argo-cd/server/settings"
 	"github.com/argoproj/argo-cd/server/version"
 	grpc_util "github.com/argoproj/argo-cd/util/grpc"
 	"github.com/argoproj/argo-cd/util/localconfig"
@@ -31,8 +32,9 @@ const (
 	EnvArgoCDAuthToken = "ARGOCD_AUTH_TOKEN"
 )
 
-// ServerClient defines an interface for interaction with an Argo CD server.
-type ServerClient interface {
+// Client defines an interface for interaction with an Argo CD server.
+type Client interface {
+	ClientOptions() ClientOptions
 	NewConn() (*grpc.ClientConn, error)
 	NewRepoClient() (*grpc.ClientConn, repository.RepositoryServiceClient, error)
 	NewRepoClientOrDie() (*grpc.ClientConn, repository.RepositoryServiceClient)
@@ -42,6 +44,8 @@ type ServerClient interface {
 	NewApplicationClientOrDie() (*grpc.ClientConn, application.ApplicationServiceClient)
 	NewSessionClient() (*grpc.ClientConn, session.SessionServiceClient, error)
 	NewSessionClientOrDie() (*grpc.ClientConn, session.SessionServiceClient)
+	NewSettingsClient() (*grpc.ClientConn, settings.SettingsServiceClient, error)
+	NewSettingsClientOrDie() (*grpc.ClientConn, settings.SettingsServiceClient)
 	NewVersionClient() (*grpc.ClientConn, version.VersionServiceClient, error)
 	NewVersionClientOrDie() (*grpc.ClientConn, version.VersionServiceClient)
 }
@@ -66,7 +70,7 @@ type client struct {
 }
 
 // NewClient creates a new API client from a set of config options.
-func NewClient(opts *ClientOptions) (ServerClient, error) {
+func NewClient(opts *ClientOptions) (Client, error) {
 	var c client
 	localCfg, err := localconfig.ReadLocalConfig(opts.ConfigPath)
 	if err != nil {
@@ -131,7 +135,7 @@ func NewClient(opts *ClientOptions) (ServerClient, error) {
 }
 
 // NewClientOrDie creates a new API client from a set of config options, or fails fatally if the new client creation fails.
-func NewClientOrDie(opts *ClientOptions) ServerClient {
+func NewClientOrDie(opts *ClientOptions) Client {
 	client, err := NewClient(opts)
 	if err != nil {
 		log.Fatal(err)
@@ -176,6 +180,15 @@ func (c *client) NewConn() (*grpc.ClientConn, error) {
 		Token: c.AuthToken,
 	}
 	return grpc_util.BlockingDial(context.Background(), "tcp", c.ServerAddr, creds, grpc.WithPerRPCCredentials(endpointCredentials))
+}
+
+func (c *client) ClientOptions() ClientOptions {
+	return ClientOptions{
+		ServerAddr: c.ServerAddr,
+		PlainText:  c.PlainText,
+		Insecure:   c.Insecure,
+		AuthToken:  c.AuthToken,
+	}
 }
 
 func (c *client) NewRepoClient() (*grpc.ClientConn, repository.RepositoryServiceClient, error) {
@@ -244,6 +257,23 @@ func (c *client) NewSessionClientOrDie() (*grpc.ClientConn, session.SessionServi
 		log.Fatalf("Failed to establish connection to %s: %v", c.ServerAddr, err)
 	}
 	return conn, sessionIf
+}
+
+func (c *client) NewSettingsClient() (*grpc.ClientConn, settings.SettingsServiceClient, error) {
+	conn, err := c.NewConn()
+	if err != nil {
+		return nil, nil, err
+	}
+	setIf := settings.NewSettingsServiceClient(conn)
+	return conn, setIf, nil
+}
+
+func (c *client) NewSettingsClientOrDie() (*grpc.ClientConn, settings.SettingsServiceClient) {
+	conn, setIf, err := c.NewSettingsClient()
+	if err != nil {
+		log.Fatalf("Failed to establish connection to %s: %v", c.ServerAddr, err)
+	}
+	return conn, setIf
 }
 
 func (c *client) NewVersionClient() (*grpc.ClientConn, version.VersionServiceClient, error) {

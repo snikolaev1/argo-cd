@@ -5,14 +5,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/argoproj/argo-cd/common"
-	"github.com/argoproj/argo-cd/errors"
-	"github.com/argoproj/argo-cd/util/diff"
-	"github.com/argoproj/argo-cd/util/kube"
-	"github.com/argoproj/argo-cd/util/password"
-	"github.com/argoproj/argo-cd/util/session"
-	"github.com/argoproj/argo-cd/util/settings"
-	tlsutil "github.com/argoproj/argo-cd/util/tls"
 	"github.com/ghodss/yaml"
 	"github.com/gobuffalo/packr"
 	log "github.com/sirupsen/logrus"
@@ -29,6 +21,15 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/argoproj/argo-cd/common"
+	"github.com/argoproj/argo-cd/errors"
+	"github.com/argoproj/argo-cd/util/diff"
+	"github.com/argoproj/argo-cd/util/kube"
+	"github.com/argoproj/argo-cd/util/password"
+	"github.com/argoproj/argo-cd/util/session"
+	"github.com/argoproj/argo-cd/util/settings"
+	tlsutil "github.com/argoproj/argo-cd/util/tls"
 )
 
 var (
@@ -47,17 +48,17 @@ var (
 
 // InstallOptions stores a collection of installation settings.
 type InstallOptions struct {
-	DryRun          bool
-	Upgrade         bool
-	ConfigSuperuser bool
-	CreateSignature bool
-	ConfigMap       string
-	Namespace       string
-	ControllerImage string
-	UIImage         string
-	ServerImage     string
-	RepoServerImage string
-	ImagePullPolicy string
+	DryRun            bool
+	Upgrade           bool
+	UpdateSuperuser   bool
+	UpdateSignature   bool
+	SuperuserPassword string
+	Namespace         string
+	ControllerImage   string
+	UIImage           string
+	ServerImage       string
+	RepoServerImage   string
+	ImagePullPolicy   string
 }
 
 type Installer struct {
@@ -91,20 +92,29 @@ func (i *Installer) Install() {
 	i.InstallNamespace()
 	i.InstallApplicationCRD()
 	i.InstallSettings()
+	i.InstallRBACConfigMap()
 	i.InstallApplicationController()
 	i.InstallArgoCDServer()
 	i.InstallArgoCDRepoServer()
 }
 
-func (i *Installer) Uninstall() {
+func (i *Installer) Uninstall(deleteNamespace, deleteCRD bool) {
 	manifests := i.box.List()
 	for _, manifestPath := range manifests {
 		if strings.HasSuffix(manifestPath, ".yaml") || strings.HasSuffix(manifestPath, ".yml") {
 			var obj unstructured.Unstructured
 			i.unmarshalManifest(manifestPath, &obj)
-			if obj.GetKind() == "Namespace" {
-				// Don't delete namespaces
-				continue
+			switch strings.ToLower(obj.GetKind()) {
+			case "namespace":
+				if !deleteNamespace {
+					log.Infof("Skipped deletion of Namespace: '%s'", obj.GetName())
+					continue
+				}
+			case "customresourcedefinition":
+				if !deleteCRD {
+					log.Infof("Skipped deletion of CustomResourceDefinition: '%s'", obj.GetName())
+					continue
+				}
 			}
 			i.MustUninstallResource(&obj)
 		}
@@ -132,49 +142,67 @@ func (i *Installer) InstallSettings() {
 	kubeclientset, err := kubernetes.NewForConfig(i.config)
 	errors.CheckError(err)
 	settingsMgr := settings.NewSettingsManager(kubeclientset, i.Namespace)
-	_, err = settingsMgr.GetSettings()
-	if err == nil {
-		log.Infof("Settings already exists. Skipping creation")
-		return
-	}
-	if !apierr.IsNotFound(err) {
-		log.Fatal(err)
-	}
-	// configmap/secret not yet created
-	var newSettings settings.ArgoCDSettings
-
-	// set JWT signature
-	signature, err := session.MakeSignature(32)
-	errors.CheckError(err)
-	newSettings.ServerSignature = signature
-
-	// generate admin password
-	passwordRaw := readAndConfirmPassword()
-	hashedPassword, err := password.HashPassword(passwordRaw)
-	errors.CheckError(err)
-	newSettings.LocalUsers = map[string]string{
-		common.ArgoCDAdminUsername: hashedPassword,
+	cdSettings, err := settingsMgr.GetSettings()
+	if err != nil {
+		if apierr.IsNotFound(err) {
+			cdSettings = &settings.ArgoCDSettings{}
+		} else {
+			log.Fatal(err)
+		}
 	}
 
-	// generate TLS cert
-	hosts := []string{
-		"localhost",
-		"argocd-server",
-		fmt.Sprintf("argocd-server.%s", i.Namespace),
-		fmt.Sprintf("argocd-server.%s.svc", i.Namespace),
-		fmt.Sprintf("argocd-server.%s.svc.cluster.local", i.Namespace),
+	if cdSettings.ServerSignature == nil || i.UpdateSignature {
+		// set JWT signature
+		signature, err := session.MakeSignature(32)
+		errors.CheckError(err)
+		cdSettings.ServerSignature = signature
 	}
-	certOpts := tlsutil.CertOptions{
-		Hosts:        hosts,
-		Organization: "Argo CD",
-		IsCA:         true,
-	}
-	cert, err := tlsutil.GenerateX509KeyPair(certOpts)
-	errors.CheckError(err)
-	newSettings.Certificate = cert
 
-	err = settingsMgr.SaveSettings(&newSettings)
+	if cdSettings.LocalUsers == nil {
+		cdSettings.LocalUsers = make(map[string]string)
+	}
+	if _, ok := cdSettings.LocalUsers[common.ArgoCDAdminUsername]; !ok || i.UpdateSuperuser {
+		passwordRaw := i.SuperuserPassword
+		if passwordRaw == "" {
+			passwordRaw = readAndConfirmPassword()
+		}
+		hashedPassword, err := password.HashPassword(passwordRaw)
+		errors.CheckError(err)
+		cdSettings.LocalUsers = map[string]string{
+			common.ArgoCDAdminUsername: hashedPassword,
+		}
+	}
+
+	if cdSettings.Certificate == nil {
+		// generate TLS cert
+		hosts := []string{
+			"localhost",
+			"argocd-server",
+			fmt.Sprintf("argocd-server.%s", i.Namespace),
+			fmt.Sprintf("argocd-server.%s.svc", i.Namespace),
+			fmt.Sprintf("argocd-server.%s.svc.cluster.local", i.Namespace),
+		}
+		certOpts := tlsutil.CertOptions{
+			Hosts:        hosts,
+			Organization: "Argo CD",
+			IsCA:         true,
+		}
+		cert, err := tlsutil.GenerateX509KeyPair(certOpts)
+		errors.CheckError(err)
+		cdSettings.Certificate = cert
+	}
+
+	err = settingsMgr.SaveSettings(cdSettings)
 	errors.CheckError(err)
+}
+
+func (i *Installer) InstallRBACConfigMap() {
+	var rbacCM apiv1.ConfigMap
+	i.unmarshalManifest("02c_argocd-rbac-cm.yaml", &rbacCM)
+	_, err := i.InstallResource(kube.MustToUnstructured(&rbacCM))
+	if err != nil && !apierr.IsAlreadyExists(err) {
+		errors.CheckError(err)
+	}
 }
 
 func readAndConfirmPassword() string {

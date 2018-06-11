@@ -2,14 +2,84 @@ package v1alpha1
 
 import (
 	"encoding/json"
-
 	"time"
 
+	"github.com/argoproj/argo-cd/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 )
+
+// SyncOperation contains sync operation details.
+type SyncOperation struct {
+	Revision string `json:"revision,omitempty" protobuf:"bytes,1,opt,name=revision"`
+	Prune    bool   `json:"prune,omitempty" protobuf:"bytes,2,opt,name=prune"`
+	DryRun   bool   `json:"dryRun,omitempty" protobuf:"bytes,3,opt,name=dryRun"`
+}
+
+type RollbackOperation struct {
+	ID     int64 `json:"id" protobuf:"bytes,1,opt,name=id"`
+	Prune  bool  `json:"prune,omitempty" protobuf:"bytes,2,opt,name=prune"`
+	DryRun bool  `json:"dryRun,omitempty" protobuf:"bytes,3,opt,name=dryRun"`
+}
+
+// Operation contains requested operation parameters.
+type Operation struct {
+	Sync     *SyncOperation     `json:"sync,omitempty" protobuf:"bytes,1,opt,name=sync"`
+	Rollback *RollbackOperation `json:"rollback,omitempty" protobuf:"bytes,2,opt,name=rollback"`
+}
+
+type OperationPhase string
+
+const (
+	OperationRunning   OperationPhase = "Running"
+	OperationFailed    OperationPhase = "Failed"
+	OperationError     OperationPhase = "Error"
+	OperationSucceeded OperationPhase = "Succeeded"
+)
+
+func (os OperationPhase) Completed() bool {
+	switch os {
+	case OperationFailed, OperationError, OperationSucceeded:
+		return true
+	}
+	return false
+}
+
+func (os OperationPhase) Successful() bool {
+	return os == OperationSucceeded
+}
+
+// OperationState contains information about state of currently performing operation on application.
+type OperationState struct {
+	// Operation is the original requested operation
+	Operation Operation `json:"operation" protobuf:"bytes,1,opt,name=operation"`
+	// Phase is the current phase of the operation
+	Phase OperationPhase `json:"phase" protobuf:"bytes,2,opt,name=phase"`
+	// Message hold any pertinent messages when attempting to perform operation (typically errors).
+	Message string `json:"message,omitempty" protobuf:"bytes,3,opt,name=message"`
+	// SyncResult is the result of a Sync operation
+	SyncResult *SyncOperationResult `json:"syncResult,omitempty" protobuf:"bytes,4,opt,name=syncResult"`
+	// RollbackResult is the result of a Rollback operation
+	RollbackResult *SyncOperationResult `json:"rollbackResult,omitempty" protobuf:"bytes,5,opt,name=rollbackResult"`
+	// StartedAt contains time of operation start
+	StartedAt metav1.Time `json:"startedAt" protobuf:"bytes,6,opt,name=startedAt"`
+	// FinishedAt contains time of operation completion
+	FinishedAt *metav1.Time `json:"finishedAt" protobuf:"bytes,7,opt,name=finishedAt"`
+}
+
+// SyncOperationResult represent result of sync operation
+type SyncOperationResult struct {
+	Resources []*ResourceDetails `json:"resources" protobuf:"bytes,1,opt,name=resources"`
+}
+
+type ResourceDetails struct {
+	Name      string `json:"name" protobuf:"bytes,1,opt,name=name"`
+	Kind      string `json:"kind" protobuf:"bytes,2,opt,name=kind"`
+	Namespace string `json:"namespace" protobuf:"bytes,3,opt,name=namespace"`
+	Message   string `json:"message,omitempty" protobuf:"bytes,4,opt,name=message"`
+}
 
 // DeploymentInfo contains information relevant to an application deployment
 type DeploymentInfo struct {
@@ -29,6 +99,7 @@ type Application struct {
 	metav1.ObjectMeta `json:"metadata" protobuf:"bytes,1,opt,name=metadata"`
 	Spec              ApplicationSpec   `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 	Status            ApplicationStatus `json:"status" protobuf:"bytes,3,opt,name=status"`
+	Operation         *Operation        `json:"operation,omitempty" protobuf:"bytes,4,opt,name=operation"`
 }
 
 // ApplicationWatchEvent contains information about application change.
@@ -56,10 +127,7 @@ type ApplicationSpec struct {
 	// Source is a reference to the location ksonnet application definition
 	Source ApplicationSource `json:"source" protobuf:"bytes,1,opt,name=source"`
 	// Destination overrides the kubernetes server and namespace defined in the environment ksonnet app.yaml
-	// This field is optional. If omitted, uses the server and namespace defined in the environment
-	Destination *ApplicationDestination `json:"destination,omitempty" protobuf:"bytes,2,opt,name=destination"`
-	// SyncPolicy dictates whether we auto-sync based on the delta between the tracked branch and live state
-	SyncPolicy string `json:"syncPolicy,omitempty" protobuf:"bytes,3,opt,name=syncPolicy"`
+	Destination ApplicationDestination `json:"destination" protobuf:"bytes,2,name=destination"`
 }
 
 // ComponentParameter contains information about component parameter value
@@ -105,18 +173,33 @@ const (
 
 // ApplicationStatus contains information about application status in target environment.
 type ApplicationStatus struct {
-	ComparisonResult  ComparisonResult     `json:"comparisonResult" protobuf:"bytes,1,opt,name=comparisonResult"`
-	RecentDeployments []DeploymentInfo     `json:"recentDeployments" protobuf:"bytes,2,opt,name=recentDeployment"`
-	Parameters        []ComponentParameter `json:"parameters,omitempty" protobuf:"bytes,3,opt,name=parameters"`
-	Health            HealthStatus         `json:"health,omitempty" protobuf:"bytes,4,opt,name=health"`
+	ComparisonResult ComparisonResult       `json:"comparisonResult" protobuf:"bytes,1,opt,name=comparisonResult"`
+	History          []DeploymentInfo       `json:"history" protobuf:"bytes,2,opt,name=history"`
+	Parameters       []ComponentParameter   `json:"parameters,omitempty" protobuf:"bytes,3,opt,name=parameters"`
+	Health           HealthStatus           `json:"health,omitempty" protobuf:"bytes,4,opt,name=health"`
+	OperationState   *OperationState        `json:"operationState,omitempty" protobuf:"bytes,5,opt,name=operationState"`
+	Conditions       []ApplicationCondition `json:"conditions,omitempty" protobuf:"bytes,6,opt,name=conditions"`
+}
+
+type ApplicationConditionType = string
+
+const (
+	// ApplicationConditionDeletionError indicates that controller failed to delete application
+	ApplicationConditionDeletionError = "DeletionError"
+)
+
+// ApplicationCondition contains details about current application condition
+type ApplicationCondition struct {
+	// Type is an application condition type
+	Type ApplicationConditionType `json:"type" protobuf:"bytes,1,opt,name=type"`
+	// Message contains human-readable message indicating details about condition
+	Message string `json:"message" protobuf:"bytes,2,opt,name=message"`
 }
 
 // ComparisonResult is a comparison result of application spec and deployed application.
 type ComparisonResult struct {
 	ComparedAt metav1.Time       `json:"comparedAt" protobuf:"bytes,1,opt,name=comparedAt"`
 	ComparedTo ApplicationSource `json:"comparedTo" protobuf:"bytes,2,opt,name=comparedTo"`
-	Server     string            `json:"server" protobuf:"bytes,3,opt,name=server"`
-	Namespace  string            `json:"namespace" protobuf:"bytes,4,opt,name=namespace"`
 	Status     ComparisonStatus  `json:"status" protobuf:"bytes,5,opt,name=status,casttype=ComparisonStatus"`
 	Resources  []ResourceState   `json:"resources" protobuf:"bytes,6,opt,name=resources"`
 	Error      string            `json:"error" protobuf:"bytes,7,opt,name=error"`
@@ -151,6 +234,22 @@ type ResourceState struct {
 	Health             HealthStatus     `json:"health,omitempty" protobuf:"bytes,5,opt,name=health"`
 }
 
+// ConnectionStatus represents connection status
+type ConnectionStatus = string
+
+const (
+	ConnectionStatusUnknown    = "Unknown"
+	ConnectionStatusSuccessful = "Successful"
+	ConnectionStatusFailed     = "Failed"
+)
+
+// ConnectionState contains information about remote resource connection state
+type ConnectionState struct {
+	Status     ConnectionStatus `json:"status" protobuf:"bytes,1,opt,name=status"`
+	Message    string           `json:"message" protobuf:"bytes,2,opt,name=message"`
+	ModifiedAt *metav1.Time     `json:"attemptedAt" protobuf:"bytes,3,opt,name=attemptedAt"`
+}
+
 // Cluster is the definition of a cluster resource
 type Cluster struct {
 	// Server is the API server URL of the Kubernetes cluster
@@ -161,6 +260,9 @@ type Cluster struct {
 
 	// Config holds cluster information for connecting to a cluster
 	Config ClusterConfig `json:"config" protobuf:"bytes,3,opt,name=config"`
+
+	// ConnectionState contains information about cluster connection state
+	ConnectionState ConnectionState `json:"connectionState,omitempty" protobuf:"bytes,4,opt,name=connectionState"`
 }
 
 // ClusterList is a collection of Clusters.
@@ -207,16 +309,44 @@ type TLSClientConfig struct {
 
 // Repository is a Git repository holding application configurations
 type Repository struct {
-	Repo          string `json:"repo" protobuf:"bytes,1,opt,name=repo"`
-	Username      string `json:"username,omitempty" protobuf:"bytes,2,opt,name=username"`
-	Password      string `json:"password,omitempty" protobuf:"bytes,3,opt,name=password"`
-	SSHPrivateKey string `json:"sshPrivateKey,omitempty" protobuf:"bytes,4,opt,name=sshPrivateKey"`
+	Repo            string          `json:"repo" protobuf:"bytes,1,opt,name=repo"`
+	Username        string          `json:"username,omitempty" protobuf:"bytes,2,opt,name=username"`
+	Password        string          `json:"password,omitempty" protobuf:"bytes,3,opt,name=password"`
+	SSHPrivateKey   string          `json:"sshPrivateKey,omitempty" protobuf:"bytes,4,opt,name=sshPrivateKey"`
+	ConnectionState ConnectionState `json:"connectionState,omitempty" protobuf:"bytes,5,opt,name=connectionState"`
 }
 
 // RepositoryList is a collection of Repositories.
 type RepositoryList struct {
 	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	Items           []Repository `json:"items" protobuf:"bytes,2,rep,name=items"`
+}
+
+func (app *Application) getFinalizerIndex(name string) int {
+	for i, finalizer := range app.Finalizers {
+		if finalizer == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// CascadedDeletion indicates if resources finalizer is set and controller should delete app resources before deleting app
+func (app *Application) CascadedDeletion() bool {
+	return app.getFinalizerIndex(common.ResourcesFinalizerName) > -1
+}
+
+// SetCascadedDeletion sets or remove resources finalizer
+func (app *Application) SetCascadedDeletion(prune bool) {
+	index := app.getFinalizerIndex(common.ResourcesFinalizerName)
+	if prune != (index > -1) {
+		if index > -1 {
+			app.Finalizers[index] = app.Finalizers[len(app.Finalizers)-1]
+			app.Finalizers = app.Finalizers[:len(app.Finalizers)-1]
+		} else {
+			app.Finalizers = append(app.Finalizers, common.ResourcesFinalizerName)
+		}
+	}
 }
 
 // NeedRefreshAppStatus answers if application status needs to be refreshed. Returns true if application never been compared, has changed or comparison result has expired.
@@ -255,7 +385,7 @@ func (c *Cluster) RESTConfig() *rest.Config {
 func (cr *ComparisonResult) TargetObjects() ([]*unstructured.Unstructured, error) {
 	objs := make([]*unstructured.Unstructured, len(cr.Resources))
 	for i, resState := range cr.Resources {
-		obj, err := UnmarshalToUnstructured(resState.TargetState)
+		obj, err := resState.TargetObject()
 		if err != nil {
 			return nil, err
 		}
@@ -268,7 +398,7 @@ func (cr *ComparisonResult) TargetObjects() ([]*unstructured.Unstructured, error
 func (cr *ComparisonResult) LiveObjects() ([]*unstructured.Unstructured, error) {
 	objs := make([]*unstructured.Unstructured, len(cr.Resources))
 	for i, resState := range cr.Resources {
-		obj, err := UnmarshalToUnstructured(resState.LiveState)
+		obj, err := resState.LiveObject()
 		if err != nil {
 			return nil, err
 		}
@@ -287,4 +417,12 @@ func UnmarshalToUnstructured(resource string) (*unstructured.Unstructured, error
 		return nil, err
 	}
 	return &obj, nil
+}
+
+func (r ResourceState) LiveObject() (*unstructured.Unstructured, error) {
+	return UnmarshalToUnstructured(r.LiveState)
+}
+
+func (r ResourceState) TargetObject() (*unstructured.Unstructured, error) {
+	return UnmarshalToUnstructured(r.TargetState)
 }

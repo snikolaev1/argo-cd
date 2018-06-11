@@ -11,10 +11,11 @@ RUN curl -O https://get.docker.com/builds/Linux/x86_64/docker-1.13.1.tgz && \
   gometalinter.v2 --install
 
 # Install kubectl
-RUN curl -o /usr/local/bin/kubectl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+RUN curl -o /kubectl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl && \
+    chmod +x /kubectl && mv /kubectl /usr/local/bin/kubectl
 
 # Install ksonnet
-env KSONNET_VERSION=0.10.1
+env KSONNET_VERSION=0.10.2
 RUN wget https://github.com/ksonnet/ksonnet/releases/download/v${KSONNET_VERSION}/ks_${KSONNET_VERSION}_linux_amd64.tar.gz && \
     tar -C /tmp/ -xf ks_${KSONNET_VERSION}_linux_amd64.tar.gz && \
     mv /tmp/ks_${KSONNET_VERSION}_linux_amd64/ks /usr/local/bin/ks && \

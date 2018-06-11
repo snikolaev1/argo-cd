@@ -41,6 +41,54 @@ func NewService(gitFactory git.ClientFactory, cache cache.Cache) *Service {
 	}
 }
 
+// ListDir lists the contents of a GitHub repo
+func (s *Service) ListDir(ctx context.Context, q *ListDirRequest) (*FileList, error) {
+	appRepoPath := tempRepoPath(q.Repo.Repo)
+	s.repoLock.Lock(appRepoPath)
+	defer s.repoLock.Unlock(appRepoPath)
+
+	gitClient := s.gitFactory.NewClient(q.Repo.Repo, appRepoPath, q.Repo.Username, q.Repo.Password, q.Repo.SSHPrivateKey)
+	err := gitClient.Init()
+	if err != nil {
+		return nil, err
+	}
+
+	commitSHA, err := gitClient.LsRemote(q.Revision)
+	if err != nil {
+		return nil, err
+	}
+	cacheKey := listDirCacheKey(commitSHA, q)
+	var res FileList
+	err = s.cache.Get(cacheKey, &res)
+	if err == nil {
+		log.Infof("manifest cache hit: %s", cacheKey)
+		return &res, nil
+	}
+
+	err = checkoutRevision(gitClient, q.Revision)
+	if err != nil {
+		return nil, err
+	}
+
+	lsFiles, err := gitClient.LsFiles(q.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	res = FileList{
+		Items: lsFiles,
+	}
+	err = s.cache.Set(&cache.Item{
+		Key:        cacheKey,
+		Object:     &res,
+		Expiration: DefaultRepoCacheExpiration,
+	})
+	if err != nil {
+		log.Warnf("manifest cache set error %s: %v", cacheKey, err)
+	}
+	return &res, nil
+}
+
 func (s *Service) GetFile(ctx context.Context, q *GetFileRequest) (*GetFileResponse, error) {
 	appRepoPath := tempRepoPath(q.Repo.Repo)
 	s.repoLock.Lock(appRepoPath)
@@ -102,6 +150,11 @@ func (s *Service) GenerateManifest(c context.Context, q *ManifestRequest) (*Mani
 		return nil, fmt.Errorf("unable to load application from %s: %v", appPath, err)
 	}
 
+	params, err := ksApp.ListEnvParams(q.Environment)
+	if err != nil {
+		return nil, err
+	}
+
 	if q.ComponentParameterOverrides != nil {
 		for _, override := range q.ComponentParameterOverrides {
 			err = ksApp.SetComponentParams(q.Environment, override.Component, override.Name, override.Value)
@@ -140,6 +193,7 @@ func (s *Service) GenerateManifest(c context.Context, q *ManifestRequest) (*Mani
 		Manifests: manifests,
 		Namespace: env.Destination.Namespace,
 		Server:    env.Destination.Server,
+		Params:    params,
 	}
 	err = s.cache.Set(&cache.Item{
 		Key:        cacheKey,
@@ -174,62 +228,6 @@ func setAppLabels(target *unstructured.Unstructured, appName string) error {
 	return nil
 }
 
-// GetEnvParams retrieves Ksonnet environment params in specified repo name and revision
-func (s *Service) GetEnvParams(c context.Context, q *EnvParamsRequest) (*EnvParamsResponse, error) {
-	appRepoPath := tempRepoPath(q.Repo.Repo)
-	s.repoLock.Lock(appRepoPath)
-	defer s.repoLock.Unlock(appRepoPath)
-
-	gitClient := s.gitFactory.NewClient(q.Repo.Repo, appRepoPath, q.Repo.Username, q.Repo.Password, q.Repo.SSHPrivateKey)
-	err := gitClient.Init()
-	if err != nil {
-		return nil, err
-	}
-	commitSHA, err := gitClient.LsRemote(q.Revision)
-	if err != nil {
-		return nil, err
-	}
-	cacheKey := envParamCacheKey(commitSHA, q)
-	var res EnvParamsResponse
-	err = s.cache.Get(cacheKey, &res)
-	if err == nil {
-		log.Infof("env params cache hit: %s", cacheKey)
-		return &res, nil
-	}
-	if err != cache.ErrCacheMiss {
-		log.Warnf("env params cache error %s: %v", cacheKey, err)
-	} else {
-		log.Infof("env params cache miss: %s", cacheKey)
-	}
-
-	err = checkoutRevision(gitClient, q.Revision)
-	if err != nil {
-		return nil, err
-	}
-	appPath := path.Join(appRepoPath, q.Path)
-	ksApp, err := ksutil.NewKsonnetApp(appPath)
-	if err != nil {
-		return nil, err
-	}
-	target, err := ksApp.ListEnvParams(q.Environment)
-	if err != nil {
-		return nil, err
-	}
-
-	res = EnvParamsResponse{
-		Params: target,
-	}
-	err = s.cache.Set(&cache.Item{
-		Key:        cacheKey,
-		Object:     &res,
-		Expiration: DefaultRepoCacheExpiration,
-	})
-	if err != nil {
-		log.Warnf("env params cache set error %s: %v", cacheKey, err)
-	}
-	return &res, nil
-}
-
 // tempRepoPath returns a formulated temporary directory location to clone a repository
 func tempRepoPath(repo string) string {
 	return path.Join(os.TempDir(), strings.Replace(repo, "/", "_", -1))
@@ -257,6 +255,6 @@ func manifestCacheKey(commitSHA string, q *ManifestRequest) string {
 	return fmt.Sprintf("mfst|%s|%s|%s|%s", q.Path, q.Environment, commitSHA, string(pStr))
 }
 
-func envParamCacheKey(commitSHA string, q *EnvParamsRequest) string {
-	return fmt.Sprintf("envparam|%s|%s|%s", q.Path, q.Environment, commitSHA)
+func listDirCacheKey(commitSHA string, q *ListDirRequest) string {
+	return fmt.Sprintf("ldir|%s|%s", q.Path, commitSHA)
 }

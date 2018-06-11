@@ -42,7 +42,7 @@ func NewRepoAddCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 		sshPrivateKeyPath string
 	)
 	var command = &cobra.Command{
-		Use:   "add",
+		Use:   "add REPO",
 		Short: "Add git repository credentials",
 		Run: func(c *cobra.Command, args []string) {
 			if len(args) != 1 {
@@ -59,7 +59,7 @@ func NewRepoAddCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 			}
 			err := git.TestRepo(repo.Repo, repo.Username, repo.Password, repo.SSHPrivateKey)
 			if err != nil {
-				if repo.Username != "" && repo.Password != "" || git.IsSshURL(repo.Repo) {
+				if repo.Username != "" && repo.Password != "" || git.IsSSHURL(repo.Repo) {
 					// if everything was supplied or repo URL is SSH url, one of the inputs was definitely bad
 					log.Fatal(err)
 				}
@@ -70,7 +70,8 @@ func NewRepoAddCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 			errors.CheckError(err)
 			conn, repoIf := argocdclient.NewClientOrDie(clientOpts).NewRepoClientOrDie()
 			defer util.Close(conn)
-			createdRepo, err := repoIf.Create(context.Background(), &repo)
+			repoCreateReq := repository.RepoCreateRequest{Repo: &repo}
+			createdRepo, err := repoIf.Create(context.Background(), &repoCreateReq)
 			errors.CheckError(err)
 			fmt.Printf("repository '%s' added\n", createdRepo.Repo)
 		},
@@ -84,7 +85,7 @@ func NewRepoAddCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 // NewRepoRemoveCommand returns a new instance of an `argocd repo list` command
 func NewRepoRemoveCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 	var command = &cobra.Command{
-		Use:   "rm",
+		Use:   "rm REPO",
 		Short: "Remove git repository credentials",
 		Run: func(c *cobra.Command, args []string) {
 			if len(args) == 0 {
@@ -113,9 +114,9 @@ func NewRepoListCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 			repos, err := repoIf.List(context.Background(), &repository.RepoQuery{})
 			errors.CheckError(err)
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintf(w, "REPO\tUSER\n")
+			fmt.Fprintf(w, "REPO\tUSER\tSTATUS\tMESSAGE\n")
 			for _, r := range repos.Items {
-				fmt.Fprintf(w, "%s\t%s\n", r.Repo, r.Username)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Repo, r.Username, r.ConnectionState.Status, r.ConnectionState.Message)
 			}
 			_ = w.Flush()
 		},

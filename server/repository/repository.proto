@@ -11,6 +11,42 @@ import "google/api/annotations.proto";
 import "k8s.io/api/core/v1/generated.proto";
 import "github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1/generated.proto";
 
+// RepoKsonnetQuery is a query for Repository contents matching a particular path
+message RepoKsonnetQuery {
+	string repo = 1;
+	string revision = 2;
+}
+
+// RepoKsonnetResponse is a response for Repository contents matching a particular path
+message RepoKsonnetResponse {
+	repeated KsonnetAppSpec items = 1;
+}
+
+// KsonnetAppSpec contains Ksonnet app response
+// This roughly reflects: ksonnet/ksonnet/metadata/app/schema.go
+message KsonnetAppSpec {
+	string name = 1;
+	string path = 2;
+	map<string, KsonnetEnvironment> environments = 3;
+}
+
+message KsonnetEnvironment {
+    // Name is the user defined name of an environment
+    string name = 1;
+    // KubernetesVersion is the kubernetes version the targetted cluster is running on.
+    string k8sVersion = 2;
+    // Path is the relative project path containing metadata for this environment.
+    string path = 3;
+    // Destination stores the cluster address that this environment points to.
+    KsonnetEnvironmentDestination destination = 4;
+}
+
+message KsonnetEnvironmentDestination {
+    // Server is the Kubernetes server that the cluster is running on.
+    string server = 1;
+    // Namespace is the namespace of the Kubernetes server that targets should be deployed to
+    string namespace = 2;
+}
 
 // RepoQuery is a query for Repository resources
 message RepoQuery {
@@ -19,9 +55,12 @@ message RepoQuery {
 
 message RepoResponse {}
 
+message RepoCreateRequest {
+    github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository repo = 1;
+}
+
 message RepoUpdateRequest {
-	string url = 1;
-	github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository repo = 2;
+    github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository repo = 1;
 }
 
 // RepositoryService 
@@ -32,27 +71,28 @@ service RepositoryService {
 		option (google.api.http).get = "/api/v1/repositories";
 	}
 
+	// ListKsonnetApps returns list of Ksonnet apps in the repo
+	rpc ListKsonnetApps(RepoKsonnetQuery) returns (RepoKsonnetResponse) {
+		option (google.api.http).get = "/api/v1/repositories/{repo}/ksonnet";
+	}
+
 	// Create creates a repo
-	rpc Create(github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) {
+	rpc Create(RepoCreateRequest) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) {
 		option (google.api.http) = {
 			post: "/api/v1/repositories"
-			body: "*"
+			body: "repo"
 		};
 	}
 	
-    // Get returns a repo by name
-    rpc Get(RepoQuery) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) {
+	// Get returns a repo by name
+	rpc Get(RepoQuery) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) {
 		option (google.api.http).get = "/api/v1/repositories/{repo}";
 	}
 
 	// Update updates a repo
-	rpc Update(github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) {
-	}
-
-	// Update updates a repo (special handler intended to be used only by the gRPC gateway)
-	rpc UpdateREST(RepoUpdateRequest) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) {
+	rpc Update(RepoUpdateRequest) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) {
 		option (google.api.http) = {
-			put: "/api/v1/repositories/{url}"
+			put: "/api/v1/repositories/{repo.repo}"
 			body: "repo"
 		};
 	}

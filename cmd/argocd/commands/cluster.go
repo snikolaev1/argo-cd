@@ -71,7 +71,8 @@ func NewClusterAddCommand(clientOpts *argocdclient.ClientOptions, pathOpts *clie
 			conn, clusterIf := argocdclient.NewClientOrDie(clientOpts).NewClusterClientOrDie()
 			defer util.Close(conn)
 			clst := NewCluster(args[0], conf, managerBearerToken)
-			clst, err = clusterIf.Create(context.Background(), clst)
+			clstCreateReq := cluster.ClusterCreateRequest{Cluster: clst}
+			clst, err = clusterIf.Create(context.Background(), &clstCreateReq)
 			errors.CheckError(err)
 			fmt.Printf("Cluster '%s' added\n", clst.Name)
 		},
@@ -200,9 +201,9 @@ func NewClusterListCommand(clientOpts *argocdclient.ClientOptions) *cobra.Comman
 			clusters, err := clusterIf.List(context.Background(), &cluster.ClusterQuery{})
 			errors.CheckError(err)
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintf(w, "SERVER\tNAME\n")
+			fmt.Fprintf(w, "SERVER\tNAME\tSTATUS\tMESSAGE\n")
 			for _, c := range clusters.Items {
-				fmt.Fprintf(w, "%s\t%s\n", c.Server, c.Name)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", c.Server, c.Name, c.ConnectionState.Status, c.ConnectionState.Message)
 			}
 			_ = w.Flush()
 		},

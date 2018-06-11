@@ -23,6 +23,17 @@ message Application {
   optional ApplicationSpec spec = 2;
 
   optional ApplicationStatus status = 3;
+
+  optional Operation operation = 4;
+}
+
+// ApplicationCondition contains details about current application condition
+message ApplicationCondition {
+  // Type is an application condition type
+  optional string type = 1;
+
+  // Message contains human-readable message indicating details about condition
+  optional string message = 2;
 }
 
 // ApplicationDestination contains deployment destination information
@@ -67,22 +78,22 @@ message ApplicationSpec {
   optional ApplicationSource source = 1;
 
   // Destination overrides the kubernetes server and namespace defined in the environment ksonnet app.yaml
-  // This field is optional. If omitted, uses the server and namespace defined in the environment
   optional ApplicationDestination destination = 2;
-
-  // SyncPolicy dictates whether we auto-sync based on the delta between the tracked branch and live state
-  optional string syncPolicy = 3;
 }
 
 // ApplicationStatus contains information about application status in target environment.
 message ApplicationStatus {
   optional ComparisonResult comparisonResult = 1;
 
-  repeated DeploymentInfo recentDeployment = 2;
+  repeated DeploymentInfo history = 2;
 
   repeated ComponentParameter parameters = 3;
 
   optional HealthStatus health = 4;
+
+  optional OperationState operationState = 5;
+
+  repeated ApplicationCondition conditions = 6;
 }
 
 // ApplicationWatchEvent contains information about application change.
@@ -107,6 +118,9 @@ message Cluster {
 
   // Config holds cluster information for connecting to a cluster
   optional ClusterConfig config = 3;
+
+  // ConnectionState contains information about cluster connection state
+  optional ConnectionState connectionState = 4;
 }
 
 // ClusterConfig is the configuration attributes. This structure is subset of the go-client
@@ -139,10 +153,6 @@ message ComparisonResult {
 
   optional ApplicationSource comparedTo = 2;
 
-  optional string server = 3;
-
-  optional string namespace = 4;
-
   optional string status = 5;
 
   repeated ResourceState resources = 6;
@@ -157,6 +167,15 @@ message ComponentParameter {
   optional string name = 2;
 
   optional string value = 3;
+}
+
+// ConnectionState contains information about remote resource connection state
+message ConnectionState {
+  optional string status = 1;
+
+  optional string message = 2;
+
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.Time attemptedAt = 3;
 }
 
 // DeploymentInfo contains information relevant to an application deployment
@@ -178,6 +197,37 @@ message HealthStatus {
   optional string statusDetails = 2;
 }
 
+// Operation contains requested operation parameters.
+message Operation {
+  optional SyncOperation sync = 1;
+
+  optional RollbackOperation rollback = 2;
+}
+
+// OperationState contains information about state of currently performing operation on application.
+message OperationState {
+  // Operation is the original requested operation
+  optional Operation operation = 1;
+
+  // Phase is the current phase of the operation
+  optional string phase = 2;
+
+  // Message hold any pertinent messages when attempting to perform operation (typically errors).
+  optional string message = 3;
+
+  // SyncResult is the result of a Sync operation
+  optional SyncOperationResult syncResult = 4;
+
+  // RollbackResult is the result of a Rollback operation
+  optional SyncOperationResult rollbackResult = 5;
+
+  // StartedAt contains time of operation start
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.Time startedAt = 6;
+
+  // FinishedAt contains time of operation completion
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.Time finishedAt = 7;
+}
+
 // Repository is a Git repository holding application configurations
 message Repository {
   optional string repo = 1;
@@ -187,6 +237,8 @@ message Repository {
   optional string password = 3;
 
   optional string sshPrivateKey = 4;
+
+  optional ConnectionState connectionState = 5;
 }
 
 // RepositoryList is a collection of Repositories.
@@ -194,6 +246,16 @@ message RepositoryList {
   optional k8s.io.apimachinery.pkg.apis.meta.v1.ListMeta metadata = 1;
 
   repeated Repository items = 2;
+}
+
+message ResourceDetails {
+  optional string name = 1;
+
+  optional string kind = 2;
+
+  optional string namespace = 3;
+
+  optional string message = 4;
 }
 
 // ResourceNode contains information about live resource and its children
@@ -214,6 +276,28 @@ message ResourceState {
   repeated ResourceNode childLiveResources = 4;
 
   optional HealthStatus health = 5;
+}
+
+message RollbackOperation {
+  optional int64 id = 1;
+
+  optional bool prune = 2;
+
+  optional bool dryRun = 3;
+}
+
+// SyncOperation contains sync operation details.
+message SyncOperation {
+  optional string revision = 1;
+
+  optional bool prune = 2;
+
+  optional bool dryRun = 3;
+}
+
+// SyncOperationResult represent result of sync operation
+message SyncOperationResult {
+  repeated ResourceDetails resources = 1;
 }
 
 // TLSClientConfig contains settings to enable transport layer security

@@ -13,15 +13,17 @@
 
 	It has these top-level messages:
 		ApplicationQuery
+		ApplicationResourceEventsQuery
+		ApplicationManifestQuery
 		ApplicationResponse
-		DeleteApplicationRequest
+		ApplicationCreateRequest
+		ApplicationUpdateRequest
+		ApplicationDeleteRequest
 		ApplicationSyncRequest
-		ApplicationSpecRequest
-		ApplicationSyncResult
+		ApplicationUpdateSpecRequest
 		ApplicationRollbackRequest
-		ResourceDetails
-		DeletePodQuery
-		PodLogsQuery
+		ApplicationDeletePodRequest
+		ApplicationPodLogsQuery
 		LogEntry
 */
 package application
@@ -31,9 +33,10 @@ import fmt "fmt"
 import math "math"
 import _ "github.com/gogo/protobuf/gogoproto"
 import _ "google.golang.org/genproto/googleapis/api/annotations"
-import _ "k8s.io/api/core/v1"
+import k8s_io_api_core_v1 "k8s.io/api/core/v1"
 import k8s_io_apimachinery_pkg_apis_meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 import github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1 "github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
+import repository "github.com/argoproj/argo-cd/reposerver/repository"
 
 import context "golang.org/x/net/context"
 import grpc "google.golang.org/grpc"
@@ -53,7 +56,8 @@ const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 
 // ApplicationQuery is a query for application resources
 type ApplicationQuery struct {
-	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name             *string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *ApplicationQuery) Reset()                    { *m = ApplicationQuery{} }
@@ -62,80 +66,177 @@ func (*ApplicationQuery) ProtoMessage()               {}
 func (*ApplicationQuery) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{0} }
 
 func (m *ApplicationQuery) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
+	}
+	return ""
+}
+
+// ApplicationEventsQuery is a query for application resource events
+type ApplicationResourceEventsQuery struct {
+	Name             *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	ResourceName     string  `protobuf:"bytes,2,req,name=resourceName" json:"resourceName"`
+	ResourceUID      string  `protobuf:"bytes,3,req,name=resourceUID" json:"resourceUID"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *ApplicationResourceEventsQuery) Reset()         { *m = ApplicationResourceEventsQuery{} }
+func (m *ApplicationResourceEventsQuery) String() string { return proto.CompactTextString(m) }
+func (*ApplicationResourceEventsQuery) ProtoMessage()    {}
+func (*ApplicationResourceEventsQuery) Descriptor() ([]byte, []int) {
+	return fileDescriptorApplication, []int{1}
+}
+
+func (m *ApplicationResourceEventsQuery) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
+	}
+	return ""
+}
+
+func (m *ApplicationResourceEventsQuery) GetResourceName() string {
 	if m != nil {
-		return m.Name
+		return m.ResourceName
+	}
+	return ""
+}
+
+func (m *ApplicationResourceEventsQuery) GetResourceUID() string {
+	if m != nil {
+		return m.ResourceUID
+	}
+	return ""
+}
+
+// ManifestQuery is a query for manifest resources
+type ApplicationManifestQuery struct {
+	Name             *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	Revision         string  `protobuf:"bytes,2,opt,name=revision" json:"revision"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *ApplicationManifestQuery) Reset()         { *m = ApplicationManifestQuery{} }
+func (m *ApplicationManifestQuery) String() string { return proto.CompactTextString(m) }
+func (*ApplicationManifestQuery) ProtoMessage()    {}
+func (*ApplicationManifestQuery) Descriptor() ([]byte, []int) {
+	return fileDescriptorApplication, []int{2}
+}
+
+func (m *ApplicationManifestQuery) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
+	}
+	return ""
+}
+
+func (m *ApplicationManifestQuery) GetRevision() string {
+	if m != nil {
+		return m.Revision
 	}
 	return ""
 }
 
 type ApplicationResponse struct {
+	XXX_unrecognized []byte `json:"-"`
 }
 
 func (m *ApplicationResponse) Reset()                    { *m = ApplicationResponse{} }
 func (m *ApplicationResponse) String() string            { return proto.CompactTextString(m) }
 func (*ApplicationResponse) ProtoMessage()               {}
-func (*ApplicationResponse) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{1} }
+func (*ApplicationResponse) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{3} }
 
-type DeleteApplicationRequest struct {
-	Name      string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Namespace string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	Server    string `protobuf:"bytes,3,opt,name=server,proto3" json:"server,omitempty"`
-	Force     bool   `protobuf:"varint,4,opt,name=force,proto3" json:"force,omitempty"`
+type ApplicationCreateRequest struct {
+	Application      github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application `protobuf:"bytes,1,req,name=application" json:"application"`
+	Upsert           *bool                                                                 `protobuf:"varint,2,opt,name=upsert" json:"upsert,omitempty"`
+	XXX_unrecognized []byte                                                                `json:"-"`
 }
 
-func (m *DeleteApplicationRequest) Reset()         { *m = DeleteApplicationRequest{} }
-func (m *DeleteApplicationRequest) String() string { return proto.CompactTextString(m) }
-func (*DeleteApplicationRequest) ProtoMessage()    {}
-func (*DeleteApplicationRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptorApplication, []int{2}
+func (m *ApplicationCreateRequest) Reset()         { *m = ApplicationCreateRequest{} }
+func (m *ApplicationCreateRequest) String() string { return proto.CompactTextString(m) }
+func (*ApplicationCreateRequest) ProtoMessage()    {}
+func (*ApplicationCreateRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptorApplication, []int{4}
 }
 
-func (m *DeleteApplicationRequest) GetName() string {
+func (m *ApplicationCreateRequest) GetApplication() github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application {
 	if m != nil {
-		return m.Name
+		return m.Application
+	}
+	return github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application{}
+}
+
+func (m *ApplicationCreateRequest) GetUpsert() bool {
+	if m != nil && m.Upsert != nil {
+		return *m.Upsert
+	}
+	return false
+}
+
+type ApplicationUpdateRequest struct {
+	Application      *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application `protobuf:"bytes,1,req,name=application" json:"application,omitempty"`
+	XXX_unrecognized []byte                                                                 `json:"-"`
+}
+
+func (m *ApplicationUpdateRequest) Reset()         { *m = ApplicationUpdateRequest{} }
+func (m *ApplicationUpdateRequest) String() string { return proto.CompactTextString(m) }
+func (*ApplicationUpdateRequest) ProtoMessage()    {}
+func (*ApplicationUpdateRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptorApplication, []int{5}
+}
+
+func (m *ApplicationUpdateRequest) GetApplication() *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application {
+	if m != nil {
+		return m.Application
+	}
+	return nil
+}
+
+type ApplicationDeleteRequest struct {
+	Name             *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	Cascade          *bool   `protobuf:"varint,2,opt,name=cascade" json:"cascade,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *ApplicationDeleteRequest) Reset()         { *m = ApplicationDeleteRequest{} }
+func (m *ApplicationDeleteRequest) String() string { return proto.CompactTextString(m) }
+func (*ApplicationDeleteRequest) ProtoMessage()    {}
+func (*ApplicationDeleteRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptorApplication, []int{6}
+}
+
+func (m *ApplicationDeleteRequest) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
 	}
 	return ""
 }
 
-func (m *DeleteApplicationRequest) GetNamespace() string {
-	if m != nil {
-		return m.Namespace
-	}
-	return ""
-}
-
-func (m *DeleteApplicationRequest) GetServer() string {
-	if m != nil {
-		return m.Server
-	}
-	return ""
-}
-
-func (m *DeleteApplicationRequest) GetForce() bool {
-	if m != nil {
-		return m.Force
+func (m *ApplicationDeleteRequest) GetCascade() bool {
+	if m != nil && m.Cascade != nil {
+		return *m.Cascade
 	}
 	return false
 }
 
 // ApplicationSyncRequest is a request to apply the config state to live state
 type ApplicationSyncRequest struct {
-	Name     string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Revision string `protobuf:"bytes,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	DryRun   bool   `protobuf:"varint,3,opt,name=dryRun,proto3" json:"dryRun,omitempty"`
-	Prune    bool   `protobuf:"varint,4,opt,name=prune,proto3" json:"prune,omitempty"`
+	Name             *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	Revision         string  `protobuf:"bytes,2,req,name=revision" json:"revision"`
+	DryRun           bool    `protobuf:"varint,3,req,name=dryRun" json:"dryRun"`
+	Prune            bool    `protobuf:"varint,4,req,name=prune" json:"prune"`
+	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *ApplicationSyncRequest) Reset()         { *m = ApplicationSyncRequest{} }
 func (m *ApplicationSyncRequest) String() string { return proto.CompactTextString(m) }
 func (*ApplicationSyncRequest) ProtoMessage()    {}
 func (*ApplicationSyncRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptorApplication, []int{3}
+	return fileDescriptorApplication, []int{7}
 }
 
 func (m *ApplicationSyncRequest) GetName() string {
-	if m != nil {
-		return m.Name
+	if m != nil && m.Name != nil {
+		return *m.Name
 	}
 	return ""
 }
@@ -161,75 +262,52 @@ func (m *ApplicationSyncRequest) GetPrune() bool {
 	return false
 }
 
-// ApplicationSpecRequest is a request to update application spec
-type ApplicationSpecRequest struct {
-	AppName string                                                                     `protobuf:"bytes,1,opt,name=appName,proto3" json:"appName,omitempty"`
-	Spec    *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec `protobuf:"bytes,2,opt,name=spec" json:"spec,omitempty"`
+// ApplicationUpdateSpecRequest is a request to update application spec
+type ApplicationUpdateSpecRequest struct {
+	Name             *string                                                                   `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	Spec             github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec `protobuf:"bytes,2,req,name=spec" json:"spec"`
+	XXX_unrecognized []byte                                                                    `json:"-"`
 }
 
-func (m *ApplicationSpecRequest) Reset()         { *m = ApplicationSpecRequest{} }
-func (m *ApplicationSpecRequest) String() string { return proto.CompactTextString(m) }
-func (*ApplicationSpecRequest) ProtoMessage()    {}
-func (*ApplicationSpecRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptorApplication, []int{4}
+func (m *ApplicationUpdateSpecRequest) Reset()         { *m = ApplicationUpdateSpecRequest{} }
+func (m *ApplicationUpdateSpecRequest) String() string { return proto.CompactTextString(m) }
+func (*ApplicationUpdateSpecRequest) ProtoMessage()    {}
+func (*ApplicationUpdateSpecRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptorApplication, []int{8}
 }
 
-func (m *ApplicationSpecRequest) GetAppName() string {
-	if m != nil {
-		return m.AppName
+func (m *ApplicationUpdateSpecRequest) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
 	}
 	return ""
 }
 
-func (m *ApplicationSpecRequest) GetSpec() *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec {
+func (m *ApplicationUpdateSpecRequest) GetSpec() github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec {
 	if m != nil {
 		return m.Spec
 	}
-	return nil
-}
-
-// ApplicationSyncResult is a result of a sync requeswt
-type ApplicationSyncResult struct {
-	Message   string             `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	Resources []*ResourceDetails `protobuf:"bytes,2,rep,name=resources" json:"resources,omitempty"`
-}
-
-func (m *ApplicationSyncResult) Reset()                    { *m = ApplicationSyncResult{} }
-func (m *ApplicationSyncResult) String() string            { return proto.CompactTextString(m) }
-func (*ApplicationSyncResult) ProtoMessage()               {}
-func (*ApplicationSyncResult) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{5} }
-
-func (m *ApplicationSyncResult) GetMessage() string {
-	if m != nil {
-		return m.Message
-	}
-	return ""
-}
-
-func (m *ApplicationSyncResult) GetResources() []*ResourceDetails {
-	if m != nil {
-		return m.Resources
-	}
-	return nil
+	return github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec{}
 }
 
 type ApplicationRollbackRequest struct {
-	Name   string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	ID     int64  `protobuf:"varint,2,opt,name=id,proto3" json:"id,omitempty"`
-	DryRun bool   `protobuf:"varint,3,opt,name=dryRun,proto3" json:"dryRun,omitempty"`
-	Prune  bool   `protobuf:"varint,4,opt,name=prune,proto3" json:"prune,omitempty"`
+	Name             *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	ID               int64   `protobuf:"varint,2,req,name=id" json:"id"`
+	DryRun           bool    `protobuf:"varint,3,req,name=dryRun" json:"dryRun"`
+	Prune            bool    `protobuf:"varint,4,req,name=prune" json:"prune"`
+	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *ApplicationRollbackRequest) Reset()         { *m = ApplicationRollbackRequest{} }
 func (m *ApplicationRollbackRequest) String() string { return proto.CompactTextString(m) }
 func (*ApplicationRollbackRequest) ProtoMessage()    {}
 func (*ApplicationRollbackRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptorApplication, []int{6}
+	return fileDescriptorApplication, []int{9}
 }
 
 func (m *ApplicationRollbackRequest) GetName() string {
-	if m != nil {
-		return m.Name
+	if m != nil && m.Name != nil {
+		return *m.Name
 	}
 	return ""
 }
@@ -255,128 +333,94 @@ func (m *ApplicationRollbackRequest) GetPrune() bool {
 	return false
 }
 
-type ResourceDetails struct {
-	Name      string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Kind      string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Namespace string `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	Message   string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+type ApplicationDeletePodRequest struct {
+	Name             *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	PodName          *string `protobuf:"bytes,2,req,name=podName" json:"podName,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
 }
 
-func (m *ResourceDetails) Reset()                    { *m = ResourceDetails{} }
-func (m *ResourceDetails) String() string            { return proto.CompactTextString(m) }
-func (*ResourceDetails) ProtoMessage()               {}
-func (*ResourceDetails) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{7} }
+func (m *ApplicationDeletePodRequest) Reset()         { *m = ApplicationDeletePodRequest{} }
+func (m *ApplicationDeletePodRequest) String() string { return proto.CompactTextString(m) }
+func (*ApplicationDeletePodRequest) ProtoMessage()    {}
+func (*ApplicationDeletePodRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptorApplication, []int{10}
+}
 
-func (m *ResourceDetails) GetName() string {
-	if m != nil {
-		return m.Name
+func (m *ApplicationDeletePodRequest) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
 	}
 	return ""
 }
 
-func (m *ResourceDetails) GetKind() string {
-	if m != nil {
-		return m.Kind
+func (m *ApplicationDeletePodRequest) GetPodName() string {
+	if m != nil && m.PodName != nil {
+		return *m.PodName
 	}
 	return ""
 }
 
-func (m *ResourceDetails) GetNamespace() string {
-	if m != nil {
-		return m.Namespace
+type ApplicationPodLogsQuery struct {
+	Name             *string                                    `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
+	PodName          *string                                    `protobuf:"bytes,2,req,name=podName" json:"podName,omitempty"`
+	Container        string                                     `protobuf:"bytes,3,req,name=container" json:"container"`
+	SinceSeconds     int64                                      `protobuf:"varint,4,req,name=sinceSeconds" json:"sinceSeconds"`
+	SinceTime        *k8s_io_apimachinery_pkg_apis_meta_v1.Time `protobuf:"bytes,5,opt,name=sinceTime" json:"sinceTime,omitempty"`
+	TailLines        int64                                      `protobuf:"varint,6,req,name=tailLines" json:"tailLines"`
+	Follow           bool                                       `protobuf:"varint,7,req,name=follow" json:"follow"`
+	XXX_unrecognized []byte                                     `json:"-"`
+}
+
+func (m *ApplicationPodLogsQuery) Reset()         { *m = ApplicationPodLogsQuery{} }
+func (m *ApplicationPodLogsQuery) String() string { return proto.CompactTextString(m) }
+func (*ApplicationPodLogsQuery) ProtoMessage()    {}
+func (*ApplicationPodLogsQuery) Descriptor() ([]byte, []int) {
+	return fileDescriptorApplication, []int{11}
+}
+
+func (m *ApplicationPodLogsQuery) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
 	}
 	return ""
 }
 
-func (m *ResourceDetails) GetMessage() string {
-	if m != nil {
-		return m.Message
+func (m *ApplicationPodLogsQuery) GetPodName() string {
+	if m != nil && m.PodName != nil {
+		return *m.PodName
 	}
 	return ""
 }
 
-type DeletePodQuery struct {
-	ApplicationName string `protobuf:"bytes,1,opt,name=applicationName,proto3" json:"applicationName,omitempty"`
-	PodName         string `protobuf:"bytes,2,opt,name=podName,proto3" json:"podName,omitempty"`
-}
-
-func (m *DeletePodQuery) Reset()                    { *m = DeletePodQuery{} }
-func (m *DeletePodQuery) String() string            { return proto.CompactTextString(m) }
-func (*DeletePodQuery) ProtoMessage()               {}
-func (*DeletePodQuery) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{8} }
-
-func (m *DeletePodQuery) GetApplicationName() string {
-	if m != nil {
-		return m.ApplicationName
-	}
-	return ""
-}
-
-func (m *DeletePodQuery) GetPodName() string {
-	if m != nil {
-		return m.PodName
-	}
-	return ""
-}
-
-type PodLogsQuery struct {
-	ApplicationName string                                     `protobuf:"bytes,1,opt,name=applicationName,proto3" json:"applicationName,omitempty"`
-	PodName         string                                     `protobuf:"bytes,2,opt,name=podName,proto3" json:"podName,omitempty"`
-	Container       string                                     `protobuf:"bytes,3,opt,name=container,proto3" json:"container,omitempty"`
-	SinceSeconds    int64                                      `protobuf:"varint,4,opt,name=sinceSeconds,proto3" json:"sinceSeconds,omitempty"`
-	SinceTime       *k8s_io_apimachinery_pkg_apis_meta_v1.Time `protobuf:"bytes,5,opt,name=sinceTime" json:"sinceTime,omitempty"`
-	TailLines       int64                                      `protobuf:"varint,6,opt,name=tailLines,proto3" json:"tailLines,omitempty"`
-	Follow          bool                                       `protobuf:"varint,7,opt,name=follow,proto3" json:"follow,omitempty"`
-}
-
-func (m *PodLogsQuery) Reset()                    { *m = PodLogsQuery{} }
-func (m *PodLogsQuery) String() string            { return proto.CompactTextString(m) }
-func (*PodLogsQuery) ProtoMessage()               {}
-func (*PodLogsQuery) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{9} }
-
-func (m *PodLogsQuery) GetApplicationName() string {
-	if m != nil {
-		return m.ApplicationName
-	}
-	return ""
-}
-
-func (m *PodLogsQuery) GetPodName() string {
-	if m != nil {
-		return m.PodName
-	}
-	return ""
-}
-
-func (m *PodLogsQuery) GetContainer() string {
+func (m *ApplicationPodLogsQuery) GetContainer() string {
 	if m != nil {
 		return m.Container
 	}
 	return ""
 }
 
-func (m *PodLogsQuery) GetSinceSeconds() int64 {
+func (m *ApplicationPodLogsQuery) GetSinceSeconds() int64 {
 	if m != nil {
 		return m.SinceSeconds
 	}
 	return 0
 }
 
-func (m *PodLogsQuery) GetSinceTime() *k8s_io_apimachinery_pkg_apis_meta_v1.Time {
+func (m *ApplicationPodLogsQuery) GetSinceTime() *k8s_io_apimachinery_pkg_apis_meta_v1.Time {
 	if m != nil {
 		return m.SinceTime
 	}
 	return nil
 }
 
-func (m *PodLogsQuery) GetTailLines() int64 {
+func (m *ApplicationPodLogsQuery) GetTailLines() int64 {
 	if m != nil {
 		return m.TailLines
 	}
 	return 0
 }
 
-func (m *PodLogsQuery) GetFollow() bool {
+func (m *ApplicationPodLogsQuery) GetFollow() bool {
 	if m != nil {
 		return m.Follow
 	}
@@ -384,14 +428,15 @@ func (m *PodLogsQuery) GetFollow() bool {
 }
 
 type LogEntry struct {
-	Content   string                                     `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
-	TimeStamp *k8s_io_apimachinery_pkg_apis_meta_v1.Time `protobuf:"bytes,2,opt,name=timeStamp" json:"timeStamp,omitempty"`
+	Content          string                                    `protobuf:"bytes,1,req,name=content" json:"content"`
+	TimeStamp        k8s_io_apimachinery_pkg_apis_meta_v1.Time `protobuf:"bytes,2,req,name=timeStamp" json:"timeStamp"`
+	XXX_unrecognized []byte                                    `json:"-"`
 }
 
 func (m *LogEntry) Reset()                    { *m = LogEntry{} }
 func (m *LogEntry) String() string            { return proto.CompactTextString(m) }
 func (*LogEntry) ProtoMessage()               {}
-func (*LogEntry) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{10} }
+func (*LogEntry) Descriptor() ([]byte, []int) { return fileDescriptorApplication, []int{12} }
 
 func (m *LogEntry) GetContent() string {
 	if m != nil {
@@ -400,24 +445,26 @@ func (m *LogEntry) GetContent() string {
 	return ""
 }
 
-func (m *LogEntry) GetTimeStamp() *k8s_io_apimachinery_pkg_apis_meta_v1.Time {
+func (m *LogEntry) GetTimeStamp() k8s_io_apimachinery_pkg_apis_meta_v1.Time {
 	if m != nil {
 		return m.TimeStamp
 	}
-	return nil
+	return k8s_io_apimachinery_pkg_apis_meta_v1.Time{}
 }
 
 func init() {
 	proto.RegisterType((*ApplicationQuery)(nil), "application.ApplicationQuery")
+	proto.RegisterType((*ApplicationResourceEventsQuery)(nil), "application.ApplicationResourceEventsQuery")
+	proto.RegisterType((*ApplicationManifestQuery)(nil), "application.ApplicationManifestQuery")
 	proto.RegisterType((*ApplicationResponse)(nil), "application.ApplicationResponse")
-	proto.RegisterType((*DeleteApplicationRequest)(nil), "application.DeleteApplicationRequest")
+	proto.RegisterType((*ApplicationCreateRequest)(nil), "application.ApplicationCreateRequest")
+	proto.RegisterType((*ApplicationUpdateRequest)(nil), "application.ApplicationUpdateRequest")
+	proto.RegisterType((*ApplicationDeleteRequest)(nil), "application.ApplicationDeleteRequest")
 	proto.RegisterType((*ApplicationSyncRequest)(nil), "application.ApplicationSyncRequest")
-	proto.RegisterType((*ApplicationSpecRequest)(nil), "application.ApplicationSpecRequest")
-	proto.RegisterType((*ApplicationSyncResult)(nil), "application.ApplicationSyncResult")
+	proto.RegisterType((*ApplicationUpdateSpecRequest)(nil), "application.ApplicationUpdateSpecRequest")
 	proto.RegisterType((*ApplicationRollbackRequest)(nil), "application.ApplicationRollbackRequest")
-	proto.RegisterType((*ResourceDetails)(nil), "application.ResourceDetails")
-	proto.RegisterType((*DeletePodQuery)(nil), "application.DeletePodQuery")
-	proto.RegisterType((*PodLogsQuery)(nil), "application.PodLogsQuery")
+	proto.RegisterType((*ApplicationDeletePodRequest)(nil), "application.ApplicationDeletePodRequest")
+	proto.RegisterType((*ApplicationPodLogsQuery)(nil), "application.ApplicationPodLogsQuery")
 	proto.RegisterType((*LogEntry)(nil), "application.LogEntry")
 }
 
@@ -434,26 +481,30 @@ const _ = grpc.SupportPackageIsVersion4
 type ApplicationServiceClient interface {
 	// List returns list of applications
 	List(ctx context.Context, in *ApplicationQuery, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationList, error)
+	// ListResourceEvents returns a list of event resources
+	ListResourceEvents(ctx context.Context, in *ApplicationResourceEventsQuery, opts ...grpc.CallOption) (*k8s_io_api_core_v1.EventList, error)
 	// Watch returns stream of application change events.
 	Watch(ctx context.Context, in *ApplicationQuery, opts ...grpc.CallOption) (ApplicationService_WatchClient, error)
 	// Create creates an application
-	Create(ctx context.Context, in *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
+	Create(ctx context.Context, in *ApplicationCreateRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
 	// Get returns an application by name
 	Get(ctx context.Context, in *ApplicationQuery, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
+	// GetManifests returns application manifests
+	GetManifests(ctx context.Context, in *ApplicationManifestQuery, opts ...grpc.CallOption) (*repository.ManifestResponse, error)
 	// Update updates an application
-	Update(ctx context.Context, in *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
+	Update(ctx context.Context, in *ApplicationUpdateRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
 	// Update updates an application spec
-	UpdateSpec(ctx context.Context, in *ApplicationSpecRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec, error)
+	UpdateSpec(ctx context.Context, in *ApplicationUpdateSpecRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec, error)
 	// Delete deletes an application
-	Delete(ctx context.Context, in *DeleteApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
+	Delete(ctx context.Context, in *ApplicationDeleteRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
 	// Sync syncs an application to its target state
-	Sync(ctx context.Context, in *ApplicationSyncRequest, opts ...grpc.CallOption) (*ApplicationSyncResult, error)
+	Sync(ctx context.Context, in *ApplicationSyncRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
 	// Sync syncs an application to its target state
-	Rollback(ctx context.Context, in *ApplicationRollbackRequest, opts ...grpc.CallOption) (*ApplicationSyncResult, error)
+	Rollback(ctx context.Context, in *ApplicationRollbackRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
 	// PodLogs returns stream of log entries for the specified pod. Pod
-	DeletePod(ctx context.Context, in *DeletePodQuery, opts ...grpc.CallOption) (*ApplicationResponse, error)
+	DeletePod(ctx context.Context, in *ApplicationDeletePodRequest, opts ...grpc.CallOption) (*ApplicationResponse, error)
 	// PodLogs returns stream of log entries for the specified pod. Pod
-	PodLogs(ctx context.Context, in *PodLogsQuery, opts ...grpc.CallOption) (ApplicationService_PodLogsClient, error)
+	PodLogs(ctx context.Context, in *ApplicationPodLogsQuery, opts ...grpc.CallOption) (ApplicationService_PodLogsClient, error)
 }
 
 type applicationServiceClient struct {
@@ -467,6 +518,15 @@ func NewApplicationServiceClient(cc *grpc.ClientConn) ApplicationServiceClient {
 func (c *applicationServiceClient) List(ctx context.Context, in *ApplicationQuery, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationList, error) {
 	out := new(github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationList)
 	err := grpc.Invoke(ctx, "/application.ApplicationService/List", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *applicationServiceClient) ListResourceEvents(ctx context.Context, in *ApplicationResourceEventsQuery, opts ...grpc.CallOption) (*k8s_io_api_core_v1.EventList, error) {
+	out := new(k8s_io_api_core_v1.EventList)
+	err := grpc.Invoke(ctx, "/application.ApplicationService/ListResourceEvents", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +565,7 @@ func (x *applicationServiceWatchClient) Recv() (*github_com_argoproj_argo_cd_pkg
 	return m, nil
 }
 
-func (c *applicationServiceClient) Create(ctx context.Context, in *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error) {
+func (c *applicationServiceClient) Create(ctx context.Context, in *ApplicationCreateRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error) {
 	out := new(github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application)
 	err := grpc.Invoke(ctx, "/application.ApplicationService/Create", in, out, c.cc, opts...)
 	if err != nil {
@@ -523,7 +583,16 @@ func (c *applicationServiceClient) Get(ctx context.Context, in *ApplicationQuery
 	return out, nil
 }
 
-func (c *applicationServiceClient) Update(ctx context.Context, in *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error) {
+func (c *applicationServiceClient) GetManifests(ctx context.Context, in *ApplicationManifestQuery, opts ...grpc.CallOption) (*repository.ManifestResponse, error) {
+	out := new(repository.ManifestResponse)
+	err := grpc.Invoke(ctx, "/application.ApplicationService/GetManifests", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *applicationServiceClient) Update(ctx context.Context, in *ApplicationUpdateRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error) {
 	out := new(github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application)
 	err := grpc.Invoke(ctx, "/application.ApplicationService/Update", in, out, c.cc, opts...)
 	if err != nil {
@@ -532,7 +601,7 @@ func (c *applicationServiceClient) Update(ctx context.Context, in *github_com_ar
 	return out, nil
 }
 
-func (c *applicationServiceClient) UpdateSpec(ctx context.Context, in *ApplicationSpecRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec, error) {
+func (c *applicationServiceClient) UpdateSpec(ctx context.Context, in *ApplicationUpdateSpecRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec, error) {
 	out := new(github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec)
 	err := grpc.Invoke(ctx, "/application.ApplicationService/UpdateSpec", in, out, c.cc, opts...)
 	if err != nil {
@@ -541,7 +610,7 @@ func (c *applicationServiceClient) UpdateSpec(ctx context.Context, in *Applicati
 	return out, nil
 }
 
-func (c *applicationServiceClient) Delete(ctx context.Context, in *DeleteApplicationRequest, opts ...grpc.CallOption) (*ApplicationResponse, error) {
+func (c *applicationServiceClient) Delete(ctx context.Context, in *ApplicationDeleteRequest, opts ...grpc.CallOption) (*ApplicationResponse, error) {
 	out := new(ApplicationResponse)
 	err := grpc.Invoke(ctx, "/application.ApplicationService/Delete", in, out, c.cc, opts...)
 	if err != nil {
@@ -550,8 +619,8 @@ func (c *applicationServiceClient) Delete(ctx context.Context, in *DeleteApplica
 	return out, nil
 }
 
-func (c *applicationServiceClient) Sync(ctx context.Context, in *ApplicationSyncRequest, opts ...grpc.CallOption) (*ApplicationSyncResult, error) {
-	out := new(ApplicationSyncResult)
+func (c *applicationServiceClient) Sync(ctx context.Context, in *ApplicationSyncRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error) {
+	out := new(github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application)
 	err := grpc.Invoke(ctx, "/application.ApplicationService/Sync", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
@@ -559,8 +628,8 @@ func (c *applicationServiceClient) Sync(ctx context.Context, in *ApplicationSync
 	return out, nil
 }
 
-func (c *applicationServiceClient) Rollback(ctx context.Context, in *ApplicationRollbackRequest, opts ...grpc.CallOption) (*ApplicationSyncResult, error) {
-	out := new(ApplicationSyncResult)
+func (c *applicationServiceClient) Rollback(ctx context.Context, in *ApplicationRollbackRequest, opts ...grpc.CallOption) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error) {
+	out := new(github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application)
 	err := grpc.Invoke(ctx, "/application.ApplicationService/Rollback", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
@@ -568,7 +637,7 @@ func (c *applicationServiceClient) Rollback(ctx context.Context, in *Application
 	return out, nil
 }
 
-func (c *applicationServiceClient) DeletePod(ctx context.Context, in *DeletePodQuery, opts ...grpc.CallOption) (*ApplicationResponse, error) {
+func (c *applicationServiceClient) DeletePod(ctx context.Context, in *ApplicationDeletePodRequest, opts ...grpc.CallOption) (*ApplicationResponse, error) {
 	out := new(ApplicationResponse)
 	err := grpc.Invoke(ctx, "/application.ApplicationService/DeletePod", in, out, c.cc, opts...)
 	if err != nil {
@@ -577,7 +646,7 @@ func (c *applicationServiceClient) DeletePod(ctx context.Context, in *DeletePodQ
 	return out, nil
 }
 
-func (c *applicationServiceClient) PodLogs(ctx context.Context, in *PodLogsQuery, opts ...grpc.CallOption) (ApplicationService_PodLogsClient, error) {
+func (c *applicationServiceClient) PodLogs(ctx context.Context, in *ApplicationPodLogsQuery, opts ...grpc.CallOption) (ApplicationService_PodLogsClient, error) {
 	stream, err := grpc.NewClientStream(ctx, &_ApplicationService_serviceDesc.Streams[1], c.cc, "/application.ApplicationService/PodLogs", opts...)
 	if err != nil {
 		return nil, err
@@ -614,26 +683,30 @@ func (x *applicationServicePodLogsClient) Recv() (*LogEntry, error) {
 type ApplicationServiceServer interface {
 	// List returns list of applications
 	List(context.Context, *ApplicationQuery) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationList, error)
+	// ListResourceEvents returns a list of event resources
+	ListResourceEvents(context.Context, *ApplicationResourceEventsQuery) (*k8s_io_api_core_v1.EventList, error)
 	// Watch returns stream of application change events.
 	Watch(*ApplicationQuery, ApplicationService_WatchServer) error
 	// Create creates an application
-	Create(context.Context, *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
+	Create(context.Context, *ApplicationCreateRequest) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
 	// Get returns an application by name
 	Get(context.Context, *ApplicationQuery) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
+	// GetManifests returns application manifests
+	GetManifests(context.Context, *ApplicationManifestQuery) (*repository.ManifestResponse, error)
 	// Update updates an application
-	Update(context.Context, *github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
+	Update(context.Context, *ApplicationUpdateRequest) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
 	// Update updates an application spec
-	UpdateSpec(context.Context, *ApplicationSpecRequest) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec, error)
+	UpdateSpec(context.Context, *ApplicationUpdateSpecRequest) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec, error)
 	// Delete deletes an application
-	Delete(context.Context, *DeleteApplicationRequest) (*ApplicationResponse, error)
+	Delete(context.Context, *ApplicationDeleteRequest) (*ApplicationResponse, error)
 	// Sync syncs an application to its target state
-	Sync(context.Context, *ApplicationSyncRequest) (*ApplicationSyncResult, error)
+	Sync(context.Context, *ApplicationSyncRequest) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
 	// Sync syncs an application to its target state
-	Rollback(context.Context, *ApplicationRollbackRequest) (*ApplicationSyncResult, error)
+	Rollback(context.Context, *ApplicationRollbackRequest) (*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application, error)
 	// PodLogs returns stream of log entries for the specified pod. Pod
-	DeletePod(context.Context, *DeletePodQuery) (*ApplicationResponse, error)
+	DeletePod(context.Context, *ApplicationDeletePodRequest) (*ApplicationResponse, error)
 	// PodLogs returns stream of log entries for the specified pod. Pod
-	PodLogs(*PodLogsQuery, ApplicationService_PodLogsServer) error
+	PodLogs(*ApplicationPodLogsQuery, ApplicationService_PodLogsServer) error
 }
 
 func RegisterApplicationServiceServer(s *grpc.Server, srv ApplicationServiceServer) {
@@ -654,6 +727,24 @@ func _ApplicationService_List_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ApplicationServiceServer).List(ctx, req.(*ApplicationQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApplicationService_ListResourceEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplicationResourceEventsQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).ListResourceEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/application.ApplicationService/ListResourceEvents",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).ListResourceEvents(ctx, req.(*ApplicationResourceEventsQuery))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -680,7 +771,7 @@ func (x *applicationServiceWatchServer) Send(m *github_com_argoproj_argo_cd_pkg_
 }
 
 func _ApplicationService_Create_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application)
+	in := new(ApplicationCreateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -692,7 +783,7 @@ func _ApplicationService_Create_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: "/application.ApplicationService/Create",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApplicationServiceServer).Create(ctx, req.(*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application))
+		return srv.(ApplicationServiceServer).Create(ctx, req.(*ApplicationCreateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -715,8 +806,26 @@ func _ApplicationService_Get_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ApplicationService_GetManifests_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplicationManifestQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).GetManifests(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/application.ApplicationService/GetManifests",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).GetManifests(ctx, req.(*ApplicationManifestQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ApplicationService_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application)
+	in := new(ApplicationUpdateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -728,13 +837,13 @@ func _ApplicationService_Update_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: "/application.ApplicationService/Update",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApplicationServiceServer).Update(ctx, req.(*github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application))
+		return srv.(ApplicationServiceServer).Update(ctx, req.(*ApplicationUpdateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ApplicationService_UpdateSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ApplicationSpecRequest)
+	in := new(ApplicationUpdateSpecRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -746,13 +855,13 @@ func _ApplicationService_UpdateSpec_Handler(srv interface{}, ctx context.Context
 		FullMethod: "/application.ApplicationService/UpdateSpec",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApplicationServiceServer).UpdateSpec(ctx, req.(*ApplicationSpecRequest))
+		return srv.(ApplicationServiceServer).UpdateSpec(ctx, req.(*ApplicationUpdateSpecRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ApplicationService_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteApplicationRequest)
+	in := new(ApplicationDeleteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -764,7 +873,7 @@ func _ApplicationService_Delete_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: "/application.ApplicationService/Delete",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApplicationServiceServer).Delete(ctx, req.(*DeleteApplicationRequest))
+		return srv.(ApplicationServiceServer).Delete(ctx, req.(*ApplicationDeleteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -806,7 +915,7 @@ func _ApplicationService_Rollback_Handler(srv interface{}, ctx context.Context, 
 }
 
 func _ApplicationService_DeletePod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeletePodQuery)
+	in := new(ApplicationDeletePodRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -818,13 +927,13 @@ func _ApplicationService_DeletePod_Handler(srv interface{}, ctx context.Context,
 		FullMethod: "/application.ApplicationService/DeletePod",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApplicationServiceServer).DeletePod(ctx, req.(*DeletePodQuery))
+		return srv.(ApplicationServiceServer).DeletePod(ctx, req.(*ApplicationDeletePodRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ApplicationService_PodLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(PodLogsQuery)
+	m := new(ApplicationPodLogsQuery)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
@@ -853,12 +962,20 @@ var _ApplicationService_serviceDesc = grpc.ServiceDesc{
 			Handler:    _ApplicationService_List_Handler,
 		},
 		{
+			MethodName: "ListResourceEvents",
+			Handler:    _ApplicationService_ListResourceEvents_Handler,
+		},
+		{
 			MethodName: "Create",
 			Handler:    _ApplicationService_Create_Handler,
 		},
 		{
 			MethodName: "Get",
 			Handler:    _ApplicationService_Get_Handler,
+		},
+		{
+			MethodName: "GetManifests",
+			Handler:    _ApplicationService_GetManifests_Handler,
 		},
 		{
 			MethodName: "Update",
@@ -915,11 +1032,84 @@ func (m *ApplicationQuery) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
+	if m.Name != nil {
 		dAtA[i] = 0xa
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Name)))
-		i += copy(dAtA[i:], m.Name)
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+func (m *ApplicationResourceEventsQuery) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApplicationResourceEventsQuery) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if m.Name == nil {
+		return 0, proto.NewRequiredNotSetError("name")
+	} else {
+		dAtA[i] = 0xa
+		i++
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
+	}
+	dAtA[i] = 0x12
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(len(m.ResourceName)))
+	i += copy(dAtA[i:], m.ResourceName)
+	dAtA[i] = 0x1a
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(len(m.ResourceUID)))
+	i += copy(dAtA[i:], m.ResourceUID)
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+func (m *ApplicationManifestQuery) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApplicationManifestQuery) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if m.Name == nil {
+		return 0, proto.NewRequiredNotSetError("name")
+	} else {
+		dAtA[i] = 0xa
+		i++
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
+	}
+	dAtA[i] = 0x12
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(len(m.Revision)))
+	i += copy(dAtA[i:], m.Revision)
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -939,10 +1129,13 @@ func (m *ApplicationResponse) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	return i, nil
 }
 
-func (m *DeleteApplicationRequest) Marshal() (dAtA []byte, err error) {
+func (m *ApplicationCreateRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalTo(dAtA)
@@ -952,38 +1145,103 @@ func (m *DeleteApplicationRequest) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *DeleteApplicationRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *ApplicationCreateRequest) MarshalTo(dAtA []byte) (int, error) {
 	var i int
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
-		dAtA[i] = 0xa
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Name)))
-		i += copy(dAtA[i:], m.Name)
+	dAtA[i] = 0xa
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(m.Application.Size()))
+	n1, err := m.Application.MarshalTo(dAtA[i:])
+	if err != nil {
+		return 0, err
 	}
-	if len(m.Namespace) > 0 {
-		dAtA[i] = 0x12
+	i += n1
+	if m.Upsert != nil {
+		dAtA[i] = 0x10
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Namespace)))
-		i += copy(dAtA[i:], m.Namespace)
-	}
-	if len(m.Server) > 0 {
-		dAtA[i] = 0x1a
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Server)))
-		i += copy(dAtA[i:], m.Server)
-	}
-	if m.Force {
-		dAtA[i] = 0x20
-		i++
-		if m.Force {
+		if *m.Upsert {
 			dAtA[i] = 1
 		} else {
 			dAtA[i] = 0
 		}
 		i++
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+func (m *ApplicationUpdateRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApplicationUpdateRequest) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if m.Application == nil {
+		return 0, proto.NewRequiredNotSetError("application")
+	} else {
+		dAtA[i] = 0xa
+		i++
+		i = encodeVarintApplication(dAtA, i, uint64(m.Application.Size()))
+		n2, err := m.Application.MarshalTo(dAtA[i:])
+		if err != nil {
+			return 0, err
+		}
+		i += n2
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+func (m *ApplicationDeleteRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApplicationDeleteRequest) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if m.Name == nil {
+		return 0, proto.NewRequiredNotSetError("name")
+	} else {
+		dAtA[i] = 0xa
+		i++
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
+	}
+	if m.Cascade != nil {
+		dAtA[i] = 0x10
+		i++
+		if *m.Cascade {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i++
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -1003,42 +1261,41 @@ func (m *ApplicationSyncRequest) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
+	if m.Name == nil {
+		return 0, proto.NewRequiredNotSetError("name")
+	} else {
 		dAtA[i] = 0xa
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Name)))
-		i += copy(dAtA[i:], m.Name)
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
 	}
-	if len(m.Revision) > 0 {
-		dAtA[i] = 0x12
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Revision)))
-		i += copy(dAtA[i:], m.Revision)
-	}
+	dAtA[i] = 0x12
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(len(m.Revision)))
+	i += copy(dAtA[i:], m.Revision)
+	dAtA[i] = 0x18
+	i++
 	if m.DryRun {
-		dAtA[i] = 0x18
-		i++
-		if m.DryRun {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i++
+		dAtA[i] = 1
+	} else {
+		dAtA[i] = 0
 	}
+	i++
+	dAtA[i] = 0x20
+	i++
 	if m.Prune {
-		dAtA[i] = 0x20
-		i++
-		if m.Prune {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i++
+		dAtA[i] = 1
+	} else {
+		dAtA[i] = 0
+	}
+	i++
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
 
-func (m *ApplicationSpecRequest) Marshal() (dAtA []byte, err error) {
+func (m *ApplicationUpdateSpecRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalTo(dAtA)
@@ -1048,62 +1305,29 @@ func (m *ApplicationSpecRequest) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *ApplicationSpecRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *ApplicationUpdateSpecRequest) MarshalTo(dAtA []byte) (int, error) {
 	var i int
 	_ = i
 	var l int
 	_ = l
-	if len(m.AppName) > 0 {
+	if m.Name == nil {
+		return 0, proto.NewRequiredNotSetError("name")
+	} else {
 		dAtA[i] = 0xa
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.AppName)))
-		i += copy(dAtA[i:], m.AppName)
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
 	}
-	if m.Spec != nil {
-		dAtA[i] = 0x12
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(m.Spec.Size()))
-		n1, err := m.Spec.MarshalTo(dAtA[i:])
-		if err != nil {
-			return 0, err
-		}
-		i += n1
-	}
-	return i, nil
-}
-
-func (m *ApplicationSyncResult) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
+	dAtA[i] = 0x12
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(m.Spec.Size()))
+	n3, err := m.Spec.MarshalTo(dAtA[i:])
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	return dAtA[:n], nil
-}
-
-func (m *ApplicationSyncResult) MarshalTo(dAtA []byte) (int, error) {
-	var i int
-	_ = i
-	var l int
-	_ = l
-	if len(m.Message) > 0 {
-		dAtA[i] = 0xa
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Message)))
-		i += copy(dAtA[i:], m.Message)
-	}
-	if len(m.Resources) > 0 {
-		for _, msg := range m.Resources {
-			dAtA[i] = 0x12
-			i++
-			i = encodeVarintApplication(dAtA, i, uint64(msg.Size()))
-			n, err := msg.MarshalTo(dAtA[i:])
-			if err != nil {
-				return 0, err
-			}
-			i += n
-		}
+	i += n3
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -1123,41 +1347,40 @@ func (m *ApplicationRollbackRequest) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
+	if m.Name == nil {
+		return 0, proto.NewRequiredNotSetError("name")
+	} else {
 		dAtA[i] = 0xa
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Name)))
-		i += copy(dAtA[i:], m.Name)
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
 	}
-	if m.ID != 0 {
-		dAtA[i] = 0x10
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(m.ID))
-	}
+	dAtA[i] = 0x10
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(m.ID))
+	dAtA[i] = 0x18
+	i++
 	if m.DryRun {
-		dAtA[i] = 0x18
-		i++
-		if m.DryRun {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i++
+		dAtA[i] = 1
+	} else {
+		dAtA[i] = 0
 	}
+	i++
+	dAtA[i] = 0x20
+	i++
 	if m.Prune {
-		dAtA[i] = 0x20
-		i++
-		if m.Prune {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i++
+		dAtA[i] = 1
+	} else {
+		dAtA[i] = 0
+	}
+	i++
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
 
-func (m *ResourceDetails) Marshal() (dAtA []byte, err error) {
+func (m *ApplicationDeletePodRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalTo(dAtA)
@@ -1167,39 +1390,34 @@ func (m *ResourceDetails) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *ResourceDetails) MarshalTo(dAtA []byte) (int, error) {
+func (m *ApplicationDeletePodRequest) MarshalTo(dAtA []byte) (int, error) {
 	var i int
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
+	if m.Name == nil {
+		return 0, proto.NewRequiredNotSetError("name")
+	} else {
 		dAtA[i] = 0xa
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Name)))
-		i += copy(dAtA[i:], m.Name)
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
 	}
-	if len(m.Kind) > 0 {
+	if m.PodName == nil {
+		return 0, proto.NewRequiredNotSetError("podName")
+	} else {
 		dAtA[i] = 0x12
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Kind)))
-		i += copy(dAtA[i:], m.Kind)
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.PodName)))
+		i += copy(dAtA[i:], *m.PodName)
 	}
-	if len(m.Namespace) > 0 {
-		dAtA[i] = 0x1a
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Namespace)))
-		i += copy(dAtA[i:], m.Namespace)
-	}
-	if len(m.Message) > 0 {
-		dAtA[i] = 0x22
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Message)))
-		i += copy(dAtA[i:], m.Message)
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
 
-func (m *DeletePodQuery) Marshal() (dAtA []byte, err error) {
+func (m *ApplicationPodLogsQuery) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalTo(dAtA)
@@ -1209,88 +1427,57 @@ func (m *DeletePodQuery) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *DeletePodQuery) MarshalTo(dAtA []byte) (int, error) {
+func (m *ApplicationPodLogsQuery) MarshalTo(dAtA []byte) (int, error) {
 	var i int
 	_ = i
 	var l int
 	_ = l
-	if len(m.ApplicationName) > 0 {
+	if m.Name == nil {
+		return 0, proto.NewRequiredNotSetError("name")
+	} else {
 		dAtA[i] = 0xa
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.ApplicationName)))
-		i += copy(dAtA[i:], m.ApplicationName)
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.Name)))
+		i += copy(dAtA[i:], *m.Name)
 	}
-	if len(m.PodName) > 0 {
+	if m.PodName == nil {
+		return 0, proto.NewRequiredNotSetError("podName")
+	} else {
 		dAtA[i] = 0x12
 		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.PodName)))
-		i += copy(dAtA[i:], m.PodName)
+		i = encodeVarintApplication(dAtA, i, uint64(len(*m.PodName)))
+		i += copy(dAtA[i:], *m.PodName)
 	}
-	return i, nil
-}
-
-func (m *PodLogsQuery) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalTo(dAtA)
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *PodLogsQuery) MarshalTo(dAtA []byte) (int, error) {
-	var i int
-	_ = i
-	var l int
-	_ = l
-	if len(m.ApplicationName) > 0 {
-		dAtA[i] = 0xa
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.ApplicationName)))
-		i += copy(dAtA[i:], m.ApplicationName)
-	}
-	if len(m.PodName) > 0 {
-		dAtA[i] = 0x12
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.PodName)))
-		i += copy(dAtA[i:], m.PodName)
-	}
-	if len(m.Container) > 0 {
-		dAtA[i] = 0x1a
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Container)))
-		i += copy(dAtA[i:], m.Container)
-	}
-	if m.SinceSeconds != 0 {
-		dAtA[i] = 0x20
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(m.SinceSeconds))
-	}
+	dAtA[i] = 0x1a
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(len(m.Container)))
+	i += copy(dAtA[i:], m.Container)
+	dAtA[i] = 0x20
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(m.SinceSeconds))
 	if m.SinceTime != nil {
 		dAtA[i] = 0x2a
 		i++
 		i = encodeVarintApplication(dAtA, i, uint64(m.SinceTime.Size()))
-		n2, err := m.SinceTime.MarshalTo(dAtA[i:])
+		n4, err := m.SinceTime.MarshalTo(dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
-		i += n2
+		i += n4
 	}
-	if m.TailLines != 0 {
-		dAtA[i] = 0x30
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(m.TailLines))
-	}
+	dAtA[i] = 0x30
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(m.TailLines))
+	dAtA[i] = 0x38
+	i++
 	if m.Follow {
-		dAtA[i] = 0x38
-		i++
-		if m.Follow {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i++
+		dAtA[i] = 1
+	} else {
+		dAtA[i] = 0
+	}
+	i++
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -1310,21 +1497,20 @@ func (m *LogEntry) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Content) > 0 {
-		dAtA[i] = 0xa
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(len(m.Content)))
-		i += copy(dAtA[i:], m.Content)
+	dAtA[i] = 0xa
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(len(m.Content)))
+	i += copy(dAtA[i:], m.Content)
+	dAtA[i] = 0x12
+	i++
+	i = encodeVarintApplication(dAtA, i, uint64(m.TimeStamp.Size()))
+	n5, err := m.TimeStamp.MarshalTo(dAtA[i:])
+	if err != nil {
+		return 0, err
 	}
-	if m.TimeStamp != nil {
-		dAtA[i] = 0x12
-		i++
-		i = encodeVarintApplication(dAtA, i, uint64(m.TimeStamp.Size()))
-		n3, err := m.TimeStamp.MarshalTo(dAtA[i:])
-		if err != nil {
-			return 0, err
-		}
-		i += n3
+	i += n5
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
 	return i, nil
 }
@@ -1341,9 +1527,44 @@ func encodeVarintApplication(dAtA []byte, offset int, v uint64) int {
 func (m *ApplicationQuery) Size() (n int) {
 	var l int
 	_ = l
-	l = len(m.Name)
-	if l > 0 {
+	if m.Name != nil {
+		l = len(*m.Name)
 		n += 1 + l + sovApplication(uint64(l))
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *ApplicationResourceEventsQuery) Size() (n int) {
+	var l int
+	_ = l
+	if m.Name != nil {
+		l = len(*m.Name)
+		n += 1 + l + sovApplication(uint64(l))
+	}
+	l = len(m.ResourceName)
+	n += 1 + l + sovApplication(uint64(l))
+	l = len(m.ResourceUID)
+	n += 1 + l + sovApplication(uint64(l))
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *ApplicationManifestQuery) Size() (n int) {
+	var l int
+	_ = l
+	if m.Name != nil {
+		l = len(*m.Name)
+		n += 1 + l + sovApplication(uint64(l))
+	}
+	l = len(m.Revision)
+	n += 1 + l + sovApplication(uint64(l))
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
@@ -1351,26 +1572,51 @@ func (m *ApplicationQuery) Size() (n int) {
 func (m *ApplicationResponse) Size() (n int) {
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
-func (m *DeleteApplicationRequest) Size() (n int) {
+func (m *ApplicationCreateRequest) Size() (n int) {
 	var l int
 	_ = l
-	l = len(m.Name)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	l = len(m.Namespace)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	l = len(m.Server)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	if m.Force {
+	l = m.Application.Size()
+	n += 1 + l + sovApplication(uint64(l))
+	if m.Upsert != nil {
 		n += 2
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *ApplicationUpdateRequest) Size() (n int) {
+	var l int
+	_ = l
+	if m.Application != nil {
+		l = m.Application.Size()
+		n += 1 + l + sovApplication(uint64(l))
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *ApplicationDeleteRequest) Size() (n int) {
+	var l int
+	_ = l
+	if m.Name != nil {
+		l = len(*m.Name)
+		n += 1 + l + sovApplication(uint64(l))
+	}
+	if m.Cascade != nil {
+		n += 2
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
@@ -1378,49 +1624,31 @@ func (m *DeleteApplicationRequest) Size() (n int) {
 func (m *ApplicationSyncRequest) Size() (n int) {
 	var l int
 	_ = l
-	l = len(m.Name)
-	if l > 0 {
+	if m.Name != nil {
+		l = len(*m.Name)
 		n += 1 + l + sovApplication(uint64(l))
 	}
 	l = len(m.Revision)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	if m.DryRun {
-		n += 2
-	}
-	if m.Prune {
-		n += 2
+	n += 1 + l + sovApplication(uint64(l))
+	n += 2
+	n += 2
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
 
-func (m *ApplicationSpecRequest) Size() (n int) {
+func (m *ApplicationUpdateSpecRequest) Size() (n int) {
 	var l int
 	_ = l
-	l = len(m.AppName)
-	if l > 0 {
+	if m.Name != nil {
+		l = len(*m.Name)
 		n += 1 + l + sovApplication(uint64(l))
 	}
-	if m.Spec != nil {
-		l = m.Spec.Size()
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	return n
-}
-
-func (m *ApplicationSyncResult) Size() (n int) {
-	var l int
-	_ = l
-	l = len(m.Message)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	if len(m.Resources) > 0 {
-		for _, e := range m.Resources {
-			l = e.Size()
-			n += 1 + l + sovApplication(uint64(l))
-		}
+	l = m.Spec.Size()
+	n += 1 + l + sovApplication(uint64(l))
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
@@ -1428,85 +1656,58 @@ func (m *ApplicationSyncResult) Size() (n int) {
 func (m *ApplicationRollbackRequest) Size() (n int) {
 	var l int
 	_ = l
-	l = len(m.Name)
-	if l > 0 {
+	if m.Name != nil {
+		l = len(*m.Name)
 		n += 1 + l + sovApplication(uint64(l))
 	}
-	if m.ID != 0 {
-		n += 1 + sovApplication(uint64(m.ID))
-	}
-	if m.DryRun {
-		n += 2
-	}
-	if m.Prune {
-		n += 2
+	n += 1 + sovApplication(uint64(m.ID))
+	n += 2
+	n += 2
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
 
-func (m *ResourceDetails) Size() (n int) {
+func (m *ApplicationDeletePodRequest) Size() (n int) {
 	var l int
 	_ = l
-	l = len(m.Name)
-	if l > 0 {
+	if m.Name != nil {
+		l = len(*m.Name)
 		n += 1 + l + sovApplication(uint64(l))
 	}
-	l = len(m.Kind)
-	if l > 0 {
+	if m.PodName != nil {
+		l = len(*m.PodName)
 		n += 1 + l + sovApplication(uint64(l))
 	}
-	l = len(m.Namespace)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	l = len(m.Message)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
 
-func (m *DeletePodQuery) Size() (n int) {
+func (m *ApplicationPodLogsQuery) Size() (n int) {
 	var l int
 	_ = l
-	l = len(m.ApplicationName)
-	if l > 0 {
+	if m.Name != nil {
+		l = len(*m.Name)
 		n += 1 + l + sovApplication(uint64(l))
 	}
-	l = len(m.PodName)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	return n
-}
-
-func (m *PodLogsQuery) Size() (n int) {
-	var l int
-	_ = l
-	l = len(m.ApplicationName)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	l = len(m.PodName)
-	if l > 0 {
+	if m.PodName != nil {
+		l = len(*m.PodName)
 		n += 1 + l + sovApplication(uint64(l))
 	}
 	l = len(m.Container)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	if m.SinceSeconds != 0 {
-		n += 1 + sovApplication(uint64(m.SinceSeconds))
-	}
+	n += 1 + l + sovApplication(uint64(l))
+	n += 1 + sovApplication(uint64(m.SinceSeconds))
 	if m.SinceTime != nil {
 		l = m.SinceTime.Size()
 		n += 1 + l + sovApplication(uint64(l))
 	}
-	if m.TailLines != 0 {
-		n += 1 + sovApplication(uint64(m.TailLines))
-	}
-	if m.Follow {
-		n += 2
+	n += 1 + sovApplication(uint64(m.TailLines))
+	n += 2
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
@@ -1515,12 +1716,11 @@ func (m *LogEntry) Size() (n int) {
 	var l int
 	_ = l
 	l = len(m.Content)
-	if l > 0 {
-		n += 1 + l + sovApplication(uint64(l))
-	}
-	if m.TimeStamp != nil {
-		l = m.TimeStamp.Size()
-		n += 1 + l + sovApplication(uint64(l))
+	n += 1 + l + sovApplication(uint64(l))
+	l = m.TimeStamp.Size()
+	n += 1 + l + sovApplication(uint64(l))
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
 	}
 	return n
 }
@@ -1594,7 +1794,8 @@ func (m *ApplicationQuery) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Name = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -1608,8 +1809,276 @@ func (m *ApplicationQuery) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApplicationResourceEventsQuery) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApplication
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApplicationResourceEventsQuery: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApplicationResourceEventsQuery: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApplication
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApplication
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
+			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ResourceName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApplication
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApplication
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ResourceName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000002)
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ResourceUID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApplication
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApplication
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ResourceUID = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000004)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApplication(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthApplication
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("name")
+	}
+	if hasFields[0]&uint64(0x00000002) == 0 {
+		return proto.NewRequiredNotSetError("resourceName")
+	}
+	if hasFields[0]&uint64(0x00000004) == 0 {
+		return proto.NewRequiredNotSetError("resourceUID")
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApplicationManifestQuery) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApplication
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApplicationManifestQuery: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApplicationManifestQuery: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApplication
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApplication
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
+			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Revision", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApplication
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApplication
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Revision = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApplication(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthApplication
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("name")
 	}
 
 	if iNdEx > l {
@@ -1658,6 +2127,7 @@ func (m *ApplicationResponse) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -1667,7 +2137,8 @@ func (m *ApplicationResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *DeleteApplicationRequest) Unmarshal(dAtA []byte) error {
+func (m *ApplicationCreateRequest) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1690,10 +2161,206 @@ func (m *DeleteApplicationRequest) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: DeleteApplicationRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: ApplicationCreateRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: DeleteApplicationRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: ApplicationCreateRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Application", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApplication
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApplication
+			}
+			postIndex := iNdEx + msglen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.Application.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Upsert", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApplication
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			b := bool(v != 0)
+			m.Upsert = &b
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApplication(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthApplication
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("application")
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApplicationUpdateRequest) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApplication
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApplicationUpdateRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApplicationUpdateRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Application", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApplication
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApplication
+			}
+			postIndex := iNdEx + msglen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Application == nil {
+				m.Application = &github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.Application{}
+			}
+			if err := m.Application.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApplication(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthApplication
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("application")
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApplicationDeleteRequest) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApplication
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApplicationDeleteRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApplicationDeleteRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1723,69 +2390,13 @@ func (m *DeleteApplicationRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Name = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
 		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Namespace", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowApplication
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthApplication
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Namespace = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 3:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Server", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowApplication
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthApplication
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Server = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 4:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Force", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Cascade", wireType)
 			}
 			var v int
 			for shift := uint(0); ; shift += 7 {
@@ -1802,7 +2413,8 @@ func (m *DeleteApplicationRequest) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-			m.Force = bool(v != 0)
+			b := bool(v != 0)
+			m.Cascade = &b
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApplication(dAtA[iNdEx:])
@@ -1815,8 +2427,12 @@ func (m *DeleteApplicationRequest) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("name")
 	}
 
 	if iNdEx > l {
@@ -1825,6 +2441,7 @@ func (m *DeleteApplicationRequest) Unmarshal(dAtA []byte) error {
 	return nil
 }
 func (m *ApplicationSyncRequest) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1880,8 +2497,10 @@ func (m *ApplicationSyncRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Name = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
 		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Revision", wireType)
@@ -1911,6 +2530,7 @@ func (m *ApplicationSyncRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Revision = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000002)
 		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field DryRun", wireType)
@@ -1931,6 +2551,7 @@ func (m *ApplicationSyncRequest) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.DryRun = bool(v != 0)
+			hasFields[0] |= uint64(0x00000004)
 		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Prune", wireType)
@@ -1951,6 +2572,7 @@ func (m *ApplicationSyncRequest) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.Prune = bool(v != 0)
+			hasFields[0] |= uint64(0x00000008)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApplication(dAtA[iNdEx:])
@@ -1963,8 +2585,21 @@ func (m *ApplicationSyncRequest) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("name")
+	}
+	if hasFields[0]&uint64(0x00000002) == 0 {
+		return proto.NewRequiredNotSetError("revision")
+	}
+	if hasFields[0]&uint64(0x00000004) == 0 {
+		return proto.NewRequiredNotSetError("dryRun")
+	}
+	if hasFields[0]&uint64(0x00000008) == 0 {
+		return proto.NewRequiredNotSetError("prune")
 	}
 
 	if iNdEx > l {
@@ -1972,7 +2607,8 @@ func (m *ApplicationSyncRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *ApplicationSpecRequest) Unmarshal(dAtA []byte) error {
+func (m *ApplicationUpdateSpecRequest) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1995,15 +2631,15 @@ func (m *ApplicationSpecRequest) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: ApplicationSpecRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: ApplicationUpdateSpecRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: ApplicationSpecRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: ApplicationUpdateSpecRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field AppName", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -2028,8 +2664,10 @@ func (m *ApplicationSpecRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.AppName = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
 		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Spec", wireType)
@@ -2056,13 +2694,11 @@ func (m *ApplicationSpecRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if m.Spec == nil {
-				m.Spec = &github_com_argoproj_argo_cd_pkg_apis_application_v1alpha1.ApplicationSpec{}
-			}
 			if err := m.Spec.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000002)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApplication(dAtA[iNdEx:])
@@ -2075,118 +2711,15 @@ func (m *ApplicationSpecRequest) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("name")
 	}
-	return nil
-}
-func (m *ApplicationSyncResult) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowApplication
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: ApplicationSyncResult: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: ApplicationSyncResult: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowApplication
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthApplication
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Message = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Resources", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowApplication
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= (int(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthApplication
-			}
-			postIndex := iNdEx + msglen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Resources = append(m.Resources, &ResourceDetails{})
-			if err := m.Resources[len(m.Resources)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipApplication(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if skippy < 0 {
-				return ErrInvalidLengthApplication
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
+	if hasFields[0]&uint64(0x00000002) == 0 {
+		return proto.NewRequiredNotSetError("spec")
 	}
 
 	if iNdEx > l {
@@ -2195,6 +2728,7 @@ func (m *ApplicationSyncResult) Unmarshal(dAtA []byte) error {
 	return nil
 }
 func (m *ApplicationRollbackRequest) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -2250,8 +2784,10 @@ func (m *ApplicationRollbackRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Name = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
 		case 2:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ID", wireType)
@@ -2271,6 +2807,7 @@ func (m *ApplicationRollbackRequest) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+			hasFields[0] |= uint64(0x00000002)
 		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field DryRun", wireType)
@@ -2291,6 +2828,7 @@ func (m *ApplicationRollbackRequest) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.DryRun = bool(v != 0)
+			hasFields[0] |= uint64(0x00000004)
 		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Prune", wireType)
@@ -2311,6 +2849,7 @@ func (m *ApplicationRollbackRequest) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.Prune = bool(v != 0)
+			hasFields[0] |= uint64(0x00000008)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApplication(dAtA[iNdEx:])
@@ -2323,8 +2862,21 @@ func (m *ApplicationRollbackRequest) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("name")
+	}
+	if hasFields[0]&uint64(0x00000002) == 0 {
+		return proto.NewRequiredNotSetError("id")
+	}
+	if hasFields[0]&uint64(0x00000004) == 0 {
+		return proto.NewRequiredNotSetError("dryRun")
+	}
+	if hasFields[0]&uint64(0x00000008) == 0 {
+		return proto.NewRequiredNotSetError("prune")
 	}
 
 	if iNdEx > l {
@@ -2332,7 +2884,8 @@ func (m *ApplicationRollbackRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *ResourceDetails) Unmarshal(dAtA []byte) error {
+func (m *ApplicationDeletePodRequest) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -2355,10 +2908,10 @@ func (m *ResourceDetails) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: ResourceDetails: wiretype end group for non-group")
+			return fmt.Errorf("proto: ApplicationDeletePodRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: ResourceDetails: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: ApplicationDeletePodRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -2388,174 +2941,10 @@ func (m *ResourceDetails) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Name = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
 			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Kind", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowApplication
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthApplication
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Kind = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 3:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Namespace", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowApplication
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthApplication
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Namespace = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 4:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowApplication
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthApplication
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Message = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipApplication(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if skippy < 0 {
-				return ErrInvalidLengthApplication
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *DeletePodQuery) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowApplication
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: DeletePodQuery: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: DeletePodQuery: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ApplicationName", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowApplication
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthApplication
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.ApplicationName = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
 		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field PodName", wireType)
@@ -2583,8 +2972,10 @@ func (m *DeletePodQuery) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.PodName = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.PodName = &s
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000002)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApplication(dAtA[iNdEx:])
@@ -2597,8 +2988,15 @@ func (m *DeletePodQuery) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("name")
+	}
+	if hasFields[0]&uint64(0x00000002) == 0 {
+		return proto.NewRequiredNotSetError("podName")
 	}
 
 	if iNdEx > l {
@@ -2606,7 +3004,8 @@ func (m *DeletePodQuery) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
+func (m *ApplicationPodLogsQuery) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -2629,15 +3028,15 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: PodLogsQuery: wiretype end group for non-group")
+			return fmt.Errorf("proto: ApplicationPodLogsQuery: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: PodLogsQuery: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: ApplicationPodLogsQuery: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ApplicationName", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -2662,8 +3061,10 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ApplicationName = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.Name = &s
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
 		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field PodName", wireType)
@@ -2691,8 +3092,10 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.PodName = string(dAtA[iNdEx:postIndex])
+			s := string(dAtA[iNdEx:postIndex])
+			m.PodName = &s
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000002)
 		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Container", wireType)
@@ -2722,6 +3125,7 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 			}
 			m.Container = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000004)
 		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field SinceSeconds", wireType)
@@ -2741,6 +3145,7 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+			hasFields[0] |= uint64(0x00000008)
 		case 5:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field SinceTime", wireType)
@@ -2793,6 +3198,7 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+			hasFields[0] |= uint64(0x00000010)
 		case 7:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Follow", wireType)
@@ -2813,6 +3219,7 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.Follow = bool(v != 0)
+			hasFields[0] |= uint64(0x00000020)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApplication(dAtA[iNdEx:])
@@ -2825,8 +3232,27 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("name")
+	}
+	if hasFields[0]&uint64(0x00000002) == 0 {
+		return proto.NewRequiredNotSetError("podName")
+	}
+	if hasFields[0]&uint64(0x00000004) == 0 {
+		return proto.NewRequiredNotSetError("container")
+	}
+	if hasFields[0]&uint64(0x00000008) == 0 {
+		return proto.NewRequiredNotSetError("sinceSeconds")
+	}
+	if hasFields[0]&uint64(0x00000010) == 0 {
+		return proto.NewRequiredNotSetError("tailLines")
+	}
+	if hasFields[0]&uint64(0x00000020) == 0 {
+		return proto.NewRequiredNotSetError("follow")
 	}
 
 	if iNdEx > l {
@@ -2835,6 +3261,7 @@ func (m *PodLogsQuery) Unmarshal(dAtA []byte) error {
 	return nil
 }
 func (m *LogEntry) Unmarshal(dAtA []byte) error {
+	var hasFields [1]uint64
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -2892,6 +3319,7 @@ func (m *LogEntry) Unmarshal(dAtA []byte) error {
 			}
 			m.Content = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000001)
 		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field TimeStamp", wireType)
@@ -2918,13 +3346,11 @@ func (m *LogEntry) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if m.TimeStamp == nil {
-				m.TimeStamp = &k8s_io_apimachinery_pkg_apis_meta_v1.Time{}
-			}
 			if err := m.TimeStamp.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
+			hasFields[0] |= uint64(0x00000002)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApplication(dAtA[iNdEx:])
@@ -2937,8 +3363,15 @@ func (m *LogEntry) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
+	}
+	if hasFields[0]&uint64(0x00000001) == 0 {
+		return proto.NewRequiredNotSetError("content")
+	}
+	if hasFields[0]&uint64(0x00000002) == 0 {
+		return proto.NewRequiredNotSetError("timeStamp")
 	}
 
 	if iNdEx > l {
@@ -3054,71 +3487,79 @@ var (
 func init() { proto.RegisterFile("server/application/application.proto", fileDescriptorApplication) }
 
 var fileDescriptorApplication = []byte{
-	// 1054 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x57, 0x4f, 0x6f, 0xdc, 0x44,
-	0x14, 0x97, 0x77, 0x37, 0x9b, 0x64, 0x52, 0x28, 0x1a, 0x92, 0xc8, 0x75, 0xd3, 0x34, 0x9a, 0xa4,
-	0x10, 0x82, 0xb0, 0x9b, 0x00, 0x02, 0x45, 0xe5, 0x40, 0x48, 0x81, 0xa2, 0x08, 0x05, 0xa7, 0x08,
-	0x89, 0x03, 0x68, 0x62, 0xbf, 0x3a, 0x26, 0xf6, 0x8c, 0xeb, 0x99, 0x35, 0x5a, 0x4a, 0x0e, 0x70,
-	0x82, 0x13, 0xe2, 0xcf, 0x9d, 0x13, 0x47, 0x3e, 0x00, 0xdf, 0x00, 0x6e, 0x48, 0xdc, 0x11, 0x8a,
-	0xf8, 0x20, 0x68, 0xc6, 0xf6, 0xda, 0xde, 0xec, 0x6e, 0x5b, 0xb4, 0x87, 0x9e, 0x76, 0xde, 0xcc,
-	0xf3, 0xfc, 0x7e, 0xef, 0xbd, 0x99, 0xf7, 0x9b, 0x45, 0x1b, 0x02, 0xd2, 0x0c, 0x52, 0x87, 0x26,
-	0x49, 0x14, 0x7a, 0x54, 0x86, 0x9c, 0xd5, 0xc7, 0x76, 0x92, 0x72, 0xc9, 0xf1, 0x42, 0x6d, 0xca,
-	0x5a, 0x0c, 0x78, 0xc0, 0xf5, 0xbc, 0xa3, 0x46, 0xb9, 0x8b, 0xb5, 0x12, 0x70, 0x1e, 0x44, 0xe0,
-	0xd0, 0x24, 0x74, 0x28, 0x63, 0x5c, 0x6a, 0x67, 0x51, 0xac, 0x92, 0xd3, 0xd7, 0x85, 0x1d, 0x72,
-	0xbd, 0xea, 0xf1, 0x14, 0x9c, 0x6c, 0xdb, 0x09, 0x80, 0x41, 0x4a, 0x25, 0xf8, 0x85, 0xcf, 0x2b,
-	0x95, 0x4f, 0x4c, 0xbd, 0x93, 0x90, 0x41, 0xda, 0x77, 0x92, 0xd3, 0x40, 0x4d, 0x08, 0x27, 0x06,
-	0x49, 0x47, 0x7d, 0x75, 0x27, 0x08, 0xe5, 0x49, 0xef, 0xd8, 0xf6, 0x78, 0xec, 0xd0, 0x54, 0x13,
-	0xfb, 0x4c, 0x0f, 0x5e, 0xf2, 0xfc, 0xea, 0xeb, 0x7a, 0x78, 0xd9, 0x36, 0x8d, 0x92, 0x13, 0x7a,
-	0x61, 0x2b, 0xf2, 0x1c, 0x7a, 0xe6, 0xcd, 0xca, 0xef, 0x83, 0x1e, 0xa4, 0x7d, 0x8c, 0x51, 0x87,
-	0xd1, 0x18, 0x4c, 0x63, 0xcd, 0xd8, 0x9c, 0x77, 0xf5, 0x98, 0x2c, 0xa1, 0x67, 0x6b, 0x7e, 0x2e,
-	0x88, 0x84, 0x33, 0x01, 0xe4, 0x0b, 0x64, 0xee, 0x43, 0x04, 0x12, 0x1a, 0x8b, 0xf7, 0x7b, 0x20,
-	0xe4, 0xa8, 0x6d, 0xf0, 0x0a, 0x9a, 0x57, 0xbf, 0x22, 0xa1, 0x1e, 0x98, 0x2d, 0xbd, 0x50, 0x4d,
-	0xe0, 0x65, 0xd4, 0xcd, 0x4b, 0x63, 0xb6, 0xf5, 0x52, 0x61, 0xe1, 0x45, 0x34, 0x73, 0x8f, 0xa7,
-	0x1e, 0x98, 0x9d, 0x35, 0x63, 0x73, 0xce, 0xcd, 0x0d, 0x92, 0xa1, 0xe5, 0x1a, 0xea, 0x51, 0x9f,
-	0x79, 0x93, 0x90, 0x2d, 0x34, 0x97, 0x42, 0x16, 0x8a, 0x90, 0xb3, 0x02, 0x78, 0x60, 0x2b, 0x5c,
-	0x3f, 0xed, 0xbb, 0x3d, 0xa6, 0x71, 0xe7, 0xdc, 0xc2, 0x52, 0xb8, 0x49, 0xda, 0x63, 0x03, 0x5c,
-	0x6d, 0x90, 0x1f, 0x8c, 0x26, 0x70, 0x02, 0x03, 0x60, 0x13, 0xcd, 0xd2, 0x24, 0x79, 0xbf, 0xc2,
-	0x2e, 0x4d, 0xfc, 0x09, 0xea, 0x88, 0x04, 0x3c, 0x0d, 0xbd, 0xb0, 0xf3, 0x9e, 0x5d, 0x55, 0xd0,
-	0x2e, 0x2b, 0xa8, 0x07, 0x9f, 0x7a, 0xbe, 0x9d, 0x9c, 0x06, 0xb6, 0xaa, 0xa0, 0x5d, 0x3f, 0x94,
-	0x65, 0x05, 0xed, 0x61, 0x68, 0xbd, 0x2f, 0x89, 0xd1, 0xd2, 0x85, 0x64, 0x88, 0x5e, 0xa4, 0x29,
-	0xc5, 0x20, 0x04, 0x0d, 0x06, 0x94, 0x0a, 0x13, 0xef, 0xa2, 0xf9, 0x14, 0x04, 0xef, 0xa5, 0x1e,
-	0x08, 0xb3, 0xb5, 0xd6, 0xde, 0x5c, 0xd8, 0x59, 0x69, 0x40, 0xba, 0xc5, 0xea, 0x3e, 0x48, 0x1a,
-	0x46, 0xc2, 0xad, 0xdc, 0x49, 0x86, 0xac, 0x7a, 0xc5, 0x79, 0x14, 0x1d, 0x53, 0xef, 0x74, 0x52,
-	0xfe, 0x97, 0x51, 0x2b, 0xf4, 0x75, 0xf8, 0xed, 0xbd, 0xee, 0xf9, 0xdf, 0xd7, 0x5b, 0x77, 0xf6,
-	0xdd, 0x56, 0xe8, 0x3f, 0x66, 0xee, 0xef, 0xa3, 0xcb, 0x43, 0xac, 0x46, 0x82, 0x61, 0xd4, 0x39,
-	0x0d, 0x99, 0x5f, 0x14, 0x5a, 0x8f, 0x9b, 0x47, 0xaf, 0x3d, 0x7c, 0xf4, 0x6a, 0x69, 0xea, 0x34,
-	0xd2, 0x44, 0xee, 0xa2, 0xa7, 0xf3, 0x23, 0x7e, 0xc8, 0xfd, 0xfc, 0x7e, 0x6c, 0xa2, 0xcb, 0xb5,
-	0x34, 0xd5, 0xaa, 0x3d, 0x3c, 0xad, 0x76, 0x4d, 0xb8, 0xaf, 0x3d, 0x72, 0x2a, 0xa5, 0x49, 0x7e,
-	0x6a, 0xa1, 0x4b, 0x87, 0xdc, 0x3f, 0xe0, 0x81, 0x98, 0xda, 0xa6, 0x2a, 0x44, 0x8f, 0x33, 0x49,
-	0x55, 0x1b, 0x29, 0x43, 0x1c, 0x4c, 0x60, 0x82, 0x2e, 0x89, 0x90, 0x79, 0x70, 0x04, 0x1e, 0x67,
-	0xbe, 0xd0, 0x71, 0xb6, 0xdd, 0xc6, 0x1c, 0x7e, 0x17, 0xcd, 0x6b, 0xfb, 0x6e, 0x18, 0x83, 0x39,
-	0xa3, 0xcf, 0xea, 0x96, 0x9d, 0xf7, 0x28, 0xbb, 0xde, 0xa3, 0xaa, 0x33, 0xaa, 0x7a, 0x94, 0x9d,
-	0x6d, 0xdb, 0xea, 0x0b, 0xb7, 0xfa, 0x58, 0x71, 0x51, 0xf5, 0x39, 0x08, 0x19, 0x08, 0xb3, 0xab,
-	0xa1, 0xaa, 0x09, 0x55, 0xf5, 0x7b, 0x3c, 0x8a, 0xf8, 0xe7, 0xe6, 0x6c, 0x5e, 0xf5, 0xdc, 0x22,
-	0x0c, 0xcd, 0x1d, 0xf0, 0xe0, 0x36, 0x93, 0x69, 0x5f, 0xc5, 0xa9, 0xc8, 0x03, 0x93, 0xe5, 0xc9,
-	0x2d, 0x4c, 0xc5, 0x52, 0x86, 0x31, 0x1c, 0x49, 0x1a, 0x27, 0xc5, 0x8d, 0x7a, 0x2c, 0x96, 0x83,
-	0x8f, 0x77, 0x7e, 0x79, 0x0a, 0xe1, 0xfa, 0xbd, 0x81, 0x34, 0x0b, 0x3d, 0xc0, 0xdf, 0x19, 0xa8,
-	0x73, 0x10, 0x0a, 0x89, 0xaf, 0x35, 0x2e, 0xc4, 0x70, 0xa7, 0xb4, 0xa6, 0x74, 0x8f, 0x15, 0x14,
-	0x59, 0xf9, 0xfa, 0xaf, 0x7f, 0x7f, 0x6c, 0x2d, 0xe3, 0x45, 0x2d, 0x18, 0xd9, 0x76, 0xbd, 0x7f,
-	0x0b, 0xfc, 0xb3, 0x81, 0x66, 0x3e, 0xa2, 0xd2, 0x3b, 0x79, 0x18, 0xa5, 0xc3, 0xe9, 0x50, 0xd2,
-	0x58, 0xb7, 0x33, 0x60, 0x92, 0xac, 0x6b, 0x62, 0xd7, 0xf0, 0xd5, 0x92, 0x98, 0x90, 0x29, 0xd0,
-	0xb8, 0xc1, 0xef, 0xa6, 0x81, 0x7f, 0x33, 0x50, 0xf7, 0xad, 0x14, 0xa8, 0x04, 0xfc, 0xf6, 0x74,
-	0x38, 0x58, 0x53, 0xda, 0x87, 0x5c, 0xd7, 0x11, 0x5c, 0x21, 0x23, 0x53, 0xbb, 0x6b, 0x6c, 0xe1,
-	0xef, 0x0d, 0xd4, 0x7e, 0x07, 0x1e, 0x5a, 0xee, 0x69, 0xf1, 0xb9, 0x90, 0xd1, 0x3a, 0x1f, 0xe7,
-	0x81, 0xea, 0x4a, 0x67, 0xf8, 0x0f, 0x03, 0x75, 0x3f, 0x4c, 0xfc, 0x27, 0x31, 0x9f, 0x8e, 0xe6,
-	0xff, 0x82, 0xb5, 0x31, 0x9a, 0xbf, 0xba, 0x6c, 0x3e, 0x95, 0xd4, 0xd6, 0x81, 0xa8, 0xfc, 0xfe,
-	0x6a, 0x20, 0x94, 0xc7, 0xa2, 0x24, 0x0b, 0xaf, 0x8f, 0x4b, 0x73, 0x4d, 0x4b, 0xad, 0x29, 0x6a,
-	0x24, 0xb1, 0x35, 0xe1, 0x4d, 0x6b, 0x7d, 0x34, 0xe1, 0x42, 0xa4, 0xcf, 0x1c, 0x25, 0xa5, 0x8a,
-	0x6f, 0x86, 0xba, 0x79, 0xcf, 0xc7, 0x37, 0x1a, 0x00, 0xe3, 0xde, 0x3a, 0xd6, 0xda, 0xb8, 0x88,
-	0x06, 0x2f, 0xa5, 0xa2, 0xe6, 0x5b, 0x13, 0x6b, 0xfe, 0x25, 0xea, 0x28, 0xe9, 0x9e, 0x90, 0xa0,
-	0xea, 0x95, 0x63, 0x91, 0xc9, 0x4e, 0x4a, 0xfd, 0xc9, 0x8b, 0x1a, 0xf5, 0x06, 0x59, 0x9b, 0x80,
-	0xea, 0x88, 0x3e, 0xd3, 0x51, 0x7f, 0x63, 0xa0, 0xb9, 0x52, 0xca, 0xf1, 0xf3, 0x63, 0x23, 0x6a,
-	0x8a, 0xfd, 0x23, 0xd1, 0x28, 0x0e, 0x0c, 0xd9, 0x98, 0x44, 0x23, 0x2d, 0x36, 0x56, 0x54, 0xbe,
-	0x35, 0xd0, 0xfc, 0x40, 0x75, 0xf1, 0xd5, 0x11, 0x45, 0x28, 0xd5, 0xf8, 0x11, 0x52, 0xff, 0x86,
-	0x46, 0x7f, 0x6d, 0xeb, 0xd5, 0xb1, 0xd5, 0xaf, 0xeb, 0xeb, 0x99, 0x93, 0x70, 0x5f, 0x38, 0x0f,
-	0x0a, 0x51, 0x3d, 0xc3, 0x5f, 0x19, 0x68, 0xb6, 0x90, 0x6a, 0x7c, 0xa5, 0x01, 0x56, 0x17, 0x70,
-	0x6b, 0xa9, 0xb1, 0x54, 0xaa, 0x18, 0xd9, 0xd3, 0xe0, 0xb7, 0xf0, 0xee, 0xff, 0x02, 0x77, 0x22,
-	0x1e, 0x88, 0x9b, 0xc6, 0xde, 0xad, 0xdf, 0xcf, 0x57, 0x8d, 0x3f, 0xcf, 0x57, 0x8d, 0x7f, 0xce,
-	0x57, 0x8d, 0x8f, 0xed, 0x49, 0xef, 0xff, 0x8b, 0x7f, 0x6e, 0x8e, 0xbb, 0xfa, 0xad, 0xff, 0xf2,
-	0x7f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x61, 0x8e, 0xe6, 0xda, 0xf9, 0x0c, 0x00, 0x00,
+	// 1174 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x57, 0xc1, 0x6f, 0x1c, 0x35,
+	0x17, 0xff, 0xbc, 0xd9, 0x6c, 0x12, 0xa7, 0xd2, 0x87, 0x4c, 0x1b, 0x56, 0xd3, 0x24, 0x8d, 0x9c,
+	0xa4, 0x4d, 0xb6, 0x74, 0x26, 0x89, 0x90, 0x40, 0x11, 0x12, 0x22, 0x24, 0xb4, 0x81, 0x50, 0x85,
+	0x0d, 0x15, 0x12, 0x17, 0xe4, 0xce, 0xb8, 0x93, 0x21, 0xbb, 0xf6, 0x60, 0x7b, 0x17, 0x2d, 0x55,
+	0x0f, 0x54, 0x08, 0x21, 0x81, 0x84, 0x10, 0x17, 0x6e, 0x40, 0xcf, 0xdc, 0xb8, 0x73, 0xee, 0x11,
+	0x89, 0x7b, 0x85, 0x22, 0x0e, 0xfc, 0x19, 0xc8, 0x9e, 0x99, 0x8c, 0xa7, 0xbb, 0x33, 0x29, 0x62,
+	0xb9, 0x79, 0xfc, 0x9e, 0xdf, 0xfb, 0xbd, 0xf7, 0x7b, 0xfb, 0xde, 0x5b, 0xb8, 0x22, 0xa9, 0xe8,
+	0x53, 0xe1, 0x91, 0x38, 0xee, 0x44, 0x3e, 0x51, 0x11, 0x67, 0xf6, 0xd9, 0x8d, 0x05, 0x57, 0x1c,
+	0xcd, 0x5a, 0x57, 0xce, 0xc5, 0x90, 0x87, 0xdc, 0xdc, 0x7b, 0xfa, 0x94, 0xa8, 0x38, 0xf3, 0x21,
+	0xe7, 0x61, 0x87, 0x7a, 0x24, 0x8e, 0x3c, 0xc2, 0x18, 0x57, 0x46, 0x59, 0xa6, 0x52, 0x7c, 0xf2,
+	0x8a, 0x74, 0x23, 0x6e, 0xa4, 0x3e, 0x17, 0xd4, 0xeb, 0x6f, 0x7a, 0x21, 0x65, 0x54, 0x10, 0x45,
+	0x83, 0x54, 0xe7, 0xa5, 0x5c, 0xa7, 0x4b, 0xfc, 0xe3, 0x88, 0x51, 0x31, 0xf0, 0xe2, 0x93, 0x50,
+	0x5f, 0x48, 0xaf, 0x4b, 0x15, 0x19, 0xf5, 0x6a, 0x3f, 0x8c, 0xd4, 0x71, 0xef, 0xae, 0xeb, 0xf3,
+	0xae, 0x47, 0x84, 0x01, 0xf6, 0x91, 0x39, 0xdc, 0xf0, 0x83, 0xfc, 0xb5, 0x1d, 0x5e, 0x7f, 0x93,
+	0x74, 0xe2, 0x63, 0x32, 0x6c, 0x6a, 0xa7, 0xca, 0x94, 0xa0, 0x31, 0x4f, 0x73, 0x65, 0x8e, 0x91,
+	0xe2, 0x62, 0x60, 0x1d, 0x13, 0x1b, 0xf8, 0x2a, 0x7c, 0xee, 0xf5, 0xdc, 0xd7, 0xbb, 0x3d, 0x2a,
+	0x06, 0x08, 0xc1, 0x3a, 0x23, 0x5d, 0xda, 0x04, 0x4b, 0x60, 0x6d, 0xa6, 0x6d, 0xce, 0xf8, 0x0b,
+	0x00, 0x17, 0x2d, 0xc5, 0x36, 0x95, 0xbc, 0x27, 0x7c, 0xba, 0xd7, 0xa7, 0x4c, 0xc9, 0xa7, 0x9f,
+	0xd5, 0xb2, 0x67, 0x68, 0x0d, 0x5e, 0x10, 0xa9, 0xea, 0x6d, 0x2d, 0xab, 0x69, 0xd9, 0x4e, 0xfd,
+	0xf1, 0x93, 0x2b, 0xff, 0x6b, 0x17, 0x24, 0xe8, 0x2a, 0x9c, 0xcd, 0xbe, 0xef, 0xec, 0xef, 0x36,
+	0x27, 0x2c, 0x45, 0x5b, 0x80, 0x0f, 0x61, 0xd3, 0xc2, 0xf1, 0x0e, 0x61, 0xd1, 0x3d, 0x2a, 0x55,
+	0x39, 0x82, 0x25, 0x38, 0x2d, 0x68, 0x3f, 0x92, 0x11, 0x67, 0xcd, 0x9a, 0x0e, 0x28, 0x35, 0x7a,
+	0x76, 0x8b, 0x2f, 0xc1, 0xe7, 0x8b, 0x91, 0xc5, 0x9c, 0x49, 0x8a, 0x1f, 0x81, 0x82, 0xa7, 0x37,
+	0x04, 0x25, 0x8a, 0xb6, 0xe9, 0xc7, 0x3d, 0x2a, 0x15, 0x62, 0xd0, 0x2e, 0x31, 0xe3, 0x70, 0x76,
+	0xeb, 0x4d, 0x37, 0x27, 0xc4, 0xcd, 0x08, 0x31, 0x87, 0x0f, 0xfd, 0xc0, 0x8d, 0x4f, 0x42, 0x57,
+	0x73, 0xeb, 0xda, 0xe5, 0x9a, 0x71, 0xeb, 0x5a, 0x9e, 0xb2, 0xa8, 0x2d, 0x3d, 0x34, 0x07, 0x1b,
+	0xbd, 0x58, 0x52, 0xa1, 0x4c, 0x0c, 0xd3, 0xed, 0xf4, 0x0b, 0x7f, 0x5e, 0x04, 0x79, 0x27, 0x0e,
+	0x2c, 0x90, 0xc7, 0xff, 0x21, 0xc8, 0x02, 0x3c, 0x7c, 0xab, 0x80, 0x62, 0x97, 0x76, 0x68, 0x8e,
+	0x62, 0x14, 0x29, 0x4d, 0x38, 0xe5, 0x13, 0xe9, 0x93, 0x80, 0xa6, 0xf1, 0x64, 0x9f, 0xf8, 0x4b,
+	0x00, 0xe7, 0x2c, 0x53, 0x47, 0x03, 0xe6, 0x57, 0x19, 0x2a, 0xb2, 0x5b, 0x1b, 0x66, 0x17, 0xcd,
+	0xc3, 0x46, 0x20, 0x06, 0xed, 0x1e, 0x33, 0x25, 0x35, 0x9d, 0xca, 0xd3, 0x3b, 0xe4, 0xc0, 0xc9,
+	0x58, 0xf4, 0x18, 0x6d, 0xd6, 0x2d, 0x61, 0x72, 0x85, 0xbf, 0x07, 0x70, 0x7e, 0x28, 0xb7, 0x47,
+	0x31, 0xad, 0x04, 0x14, 0xc0, 0xba, 0x8c, 0xa9, 0x6f, 0xc0, 0xcc, 0x6e, 0xbd, 0x35, 0x9e, 0x64,
+	0x6b, 0xa7, 0x29, 0x36, 0x63, 0x5d, 0xff, 0x1a, 0x1d, 0x9b, 0x0c, 0xde, 0xe9, 0xdc, 0x25, 0xfe,
+	0x49, 0x15, 0x30, 0x07, 0xd6, 0xa2, 0xc0, 0xc0, 0x9a, 0xd8, 0x81, 0xda, 0xd4, 0xe9, 0x93, 0x2b,
+	0xb5, 0xfd, 0xdd, 0x76, 0x2d, 0x0a, 0xfe, 0x45, 0x8e, 0xde, 0x86, 0x97, 0x87, 0x88, 0x3f, 0xe4,
+	0xc1, 0x39, 0xdc, 0xc7, 0x3c, 0xc8, 0xbb, 0x41, 0x3b, 0xfb, 0xc4, 0x3f, 0xd5, 0xe0, 0x0b, 0x96,
+	0xb5, 0x43, 0x1e, 0x1c, 0xf0, 0xb0, 0xa2, 0xb9, 0x94, 0x5a, 0x42, 0x18, 0xce, 0xf8, 0x9c, 0x29,
+	0xa2, 0x7b, 0x72, 0xa1, 0x95, 0xe4, 0xd7, 0xba, 0x35, 0xc9, 0x88, 0xf9, 0xf4, 0x88, 0xfa, 0x9c,
+	0x05, 0xd2, 0x44, 0x37, 0x91, 0xb5, 0x26, 0x5b, 0x82, 0x6e, 0xc1, 0x19, 0xf3, 0xfd, 0x5e, 0xd4,
+	0xa5, 0xcd, 0xc9, 0x25, 0xb0, 0x36, 0xbb, 0xd5, 0x72, 0x93, 0xe6, 0xef, 0xda, 0xcd, 0x3f, 0x27,
+	0x54, 0x37, 0x7f, 0xb7, 0xbf, 0xe9, 0xea, 0x17, 0xed, 0xfc, 0xb1, 0xc6, 0xa5, 0x48, 0xd4, 0x39,
+	0x88, 0x18, 0x95, 0xcd, 0x86, 0xe5, 0x30, 0xbf, 0xd6, 0x64, 0xdc, 0xe3, 0x9d, 0x0e, 0xff, 0xa4,
+	0x39, 0x65, 0x93, 0x91, 0xdc, 0xe1, 0x4f, 0xe1, 0xf4, 0x01, 0x0f, 0xf7, 0x98, 0x12, 0x03, 0xb4,
+	0x08, 0xa7, 0x74, 0x38, 0x94, 0xa9, 0x24, 0x2d, 0xa9, 0x6a, 0x76, 0x89, 0x6e, 0xc3, 0x19, 0x15,
+	0x75, 0xe9, 0x91, 0x22, 0xdd, 0x38, 0x2d, 0xc8, 0x7f, 0x80, 0xfb, 0x0c, 0x59, 0x66, 0x62, 0xeb,
+	0xaf, 0xff, 0x43, 0x64, 0x57, 0x25, 0x15, 0xfd, 0xc8, 0xa7, 0xe8, 0x1b, 0x00, 0xeb, 0x07, 0x91,
+	0x54, 0x68, 0xa1, 0x50, 0xc8, 0x4f, 0x8f, 0x15, 0x67, 0x4c, 0x3f, 0x06, 0xed, 0x0a, 0xcf, 0x3f,
+	0xfc, 0xfd, 0xcf, 0xef, 0x6a, 0x73, 0xe8, 0xa2, 0x99, 0xd0, 0xfd, 0x4d, 0x7b, 0x60, 0x4a, 0xf4,
+	0x35, 0x80, 0x48, 0xab, 0x15, 0xa7, 0x14, 0xba, 0x5e, 0x86, 0x6f, 0xc4, 0x34, 0x73, 0x16, 0xac,
+	0x4c, 0xb9, 0x7a, 0x05, 0xd0, 0x79, 0x31, 0x0a, 0x06, 0x40, 0xcb, 0x00, 0x58, 0x41, 0x78, 0x14,
+	0x00, 0xef, 0xbe, 0xae, 0xcf, 0x07, 0x1e, 0x4d, 0xfc, 0xfe, 0x00, 0xe0, 0xe4, 0xfb, 0x44, 0xf9,
+	0xc7, 0xe7, 0x65, 0xe8, 0x70, 0x3c, 0x19, 0x32, 0xbe, 0x0c, 0x54, 0xbc, 0x6c, 0x60, 0x2e, 0xa0,
+	0xcb, 0x19, 0x4c, 0xa9, 0x04, 0x25, 0xdd, 0x02, 0xda, 0x0d, 0x80, 0x1e, 0x01, 0xd8, 0x48, 0x06,
+	0x1c, 0x5a, 0x2d, 0x83, 0x58, 0x18, 0x80, 0xce, 0x98, 0xc6, 0x08, 0x5e, 0x37, 0x00, 0x97, 0xf1,
+	0x48, 0x22, 0xb7, 0x0b, 0x33, 0xf0, 0x5b, 0x00, 0x27, 0x6e, 0xd2, 0x73, 0xcb, 0x6c, 0x5c, 0xc8,
+	0x86, 0x52, 0x37, 0x82, 0x61, 0xf4, 0x10, 0xc0, 0x0b, 0x37, 0xa9, 0xca, 0xd6, 0x10, 0x59, 0x9e,
+	0xbe, 0xc2, 0xa6, 0xe2, 0xcc, 0xbb, 0xd6, 0x26, 0x96, 0x89, 0xce, 0x56, 0x8f, 0x1b, 0xc6, 0xf5,
+	0x35, 0xb4, 0x5a, 0x55, 0x5c, 0xdd, 0x33, 0x9f, 0xbf, 0x02, 0xd8, 0x48, 0xa6, 0x53, 0xb9, 0xfb,
+	0xc2, 0x66, 0x30, 0xb6, 0x1c, 0xed, 0x19, 0xa0, 0xaf, 0x39, 0x1b, 0xa3, 0x81, 0xda, 0xef, 0x75,
+	0x6b, 0x09, 0x88, 0x22, 0xae, 0x41, 0x5f, 0x64, 0xf6, 0x17, 0x00, 0x61, 0x3e, 0x5e, 0xd1, 0x7a,
+	0x75, 0x10, 0xd6, 0x08, 0x76, 0xc6, 0x38, 0x60, 0xb1, 0x6b, 0x82, 0x59, 0x73, 0x96, 0xaa, 0xb2,
+	0xae, 0xc7, 0xef, 0xb6, 0x19, 0xc2, 0xa8, 0x0f, 0x1b, 0xc9, 0xc0, 0x2b, 0xcf, 0x7a, 0x61, 0x13,
+	0x72, 0x96, 0x2a, 0xfa, 0x4f, 0x42, 0x7c, 0x5a, 0x73, 0xad, 0xca, 0x9a, 0xfb, 0x11, 0xc0, 0xba,
+	0xde, 0x8b, 0xd0, 0x72, 0x99, 0x3d, 0x6b, 0x6b, 0x1a, 0x1b, 0xd5, 0xd7, 0x0d, 0xb4, 0x55, 0x5c,
+	0x9d, 0x9d, 0x01, 0xf3, 0xb7, 0x41, 0x0b, 0xfd, 0x0c, 0xe0, 0x74, 0xb6, 0x94, 0xa0, 0x6b, 0xa5,
+	0x61, 0x17, 0xd7, 0x96, 0xb1, 0x41, 0xf5, 0x0c, 0xd4, 0x75, 0xbc, 0x52, 0x05, 0x55, 0xa4, 0xce,
+	0x35, 0xdc, 0xaf, 0x00, 0x9c, 0x39, 0xdb, 0x5d, 0xd0, 0x5a, 0x35, 0x9b, 0xf9, 0x7a, 0xf3, 0x0c,
+	0x84, 0x6e, 0x19, 0x28, 0x2f, 0xb6, 0x5a, 0x55, 0x50, 0x62, 0x1e, 0x48, 0xef, 0x7e, 0xba, 0xbb,
+	0x3c, 0x40, 0x9f, 0x01, 0x38, 0x95, 0xee, 0x3e, 0x68, 0xa5, 0xcc, 0x83, 0xbd, 0x1c, 0x39, 0x97,
+	0x0a, 0x5a, 0xd9, 0x7e, 0x80, 0x5f, 0x36, 0xce, 0x37, 0x91, 0xf7, 0xec, 0xce, 0xbd, 0x0e, 0x0f,
+	0xe5, 0x06, 0xd8, 0x79, 0xf5, 0xf1, 0xe9, 0x22, 0xf8, 0xed, 0x74, 0x11, 0xfc, 0x71, 0xba, 0x08,
+	0x3e, 0x70, 0xab, 0xfe, 0x68, 0x0e, 0xff, 0x21, 0xff, 0x3b, 0x00, 0x00, 0xff, 0xff, 0x87, 0x2f,
+	0x7b, 0x79, 0xa5, 0x0f, 0x00, 0x00,
 }

@@ -9,18 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/argoproj/argo-cd/common"
-	"github.com/argoproj/argo-cd/controller"
-	appv1 "github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
-	appclientset "github.com/argoproj/argo-cd/pkg/client/clientset/versioned"
-	"github.com/argoproj/argo-cd/reposerver"
-	"github.com/argoproj/argo-cd/reposerver/repository"
-	"github.com/argoproj/argo-cd/server/cluster"
-	apirepository "github.com/argoproj/argo-cd/server/repository"
-	"github.com/argoproj/argo-cd/util"
-	argoutil "github.com/argoproj/argo-cd/util/argo"
-	"github.com/argoproj/argo-cd/util/git"
-	"github.com/argoproj/argo-cd/util/kube"
 	"github.com/ghodss/yaml"
 	"github.com/ksonnet/ksonnet/pkg/app"
 	log "github.com/sirupsen/logrus"
@@ -30,14 +18,22 @@ import (
 	"k8s.io/api/core/v1"
 	apierr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-)
 
-const (
-	maxRecentDeploymentsCnt = 5
+	"github.com/argoproj/argo-cd/common"
+	"github.com/argoproj/argo-cd/controller"
+	appv1 "github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
+	appclientset "github.com/argoproj/argo-cd/pkg/client/clientset/versioned"
+	"github.com/argoproj/argo-cd/reposerver"
+	"github.com/argoproj/argo-cd/reposerver/repository"
+	"github.com/argoproj/argo-cd/util"
+	"github.com/argoproj/argo-cd/util/db"
+	"github.com/argoproj/argo-cd/util/git"
+	"github.com/argoproj/argo-cd/util/grpc"
+	"github.com/argoproj/argo-cd/util/rbac"
 )
 
 // Server provides a Application service
@@ -46,10 +42,9 @@ type Server struct {
 	kubeclientset kubernetes.Interface
 	appclientset  appclientset.Interface
 	repoClientset reposerver.Clientset
-	// TODO(jessesuen): move common cluster code to shared libraries
-	clusterService cluster.ClusterServiceServer
-	repoService    apirepository.RepositoryServiceServer
-	appComparator  controller.AppComparator
+	db            db.ArgoDB
+	appComparator controller.AppStateManager
+	enf           *rbac.Enforcer
 }
 
 // NewServer returns a new instance of the Application service
@@ -58,51 +53,155 @@ func NewServer(
 	kubeclientset kubernetes.Interface,
 	appclientset appclientset.Interface,
 	repoClientset reposerver.Clientset,
-	repoService apirepository.RepositoryServiceServer,
-	clusterService cluster.ClusterServiceServer) ApplicationServiceServer {
+	db db.ArgoDB,
+	enf *rbac.Enforcer,
+) ApplicationServiceServer {
 
 	return &Server{
-		ns:             namespace,
-		appclientset:   appclientset,
-		kubeclientset:  kubeclientset,
-		clusterService: clusterService,
-		repoClientset:  repoClientset,
-		repoService:    repoService,
-		appComparator:  controller.NewKsonnetAppComparator(clusterService),
+		ns:            namespace,
+		appclientset:  appclientset,
+		kubeclientset: kubeclientset,
+		db:            db,
+		repoClientset: repoClientset,
+		appComparator: controller.NewAppStateManager(db, appclientset, repoClientset, namespace),
+		enf:           enf,
 	}
 }
 
 // List returns list of applications
 func (s *Server) List(ctx context.Context, q *ApplicationQuery) (*appv1.ApplicationList, error) {
-	return s.appclientset.ArgoprojV1alpha1().Applications(s.ns).List(metav1.ListOptions{})
+	appList, err := s.appclientset.ArgoprojV1alpha1().Applications(s.ns).List(metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	newItems := make([]appv1.Application, 0)
+	for _, app := range appList.Items {
+		if s.enf.EnforceClaims(ctx.Value("claims"), "applications", "get", fmt.Sprintf("*/%s", app.Name)) {
+			newItems = append(newItems, app)
+		}
+	}
+	appList.Items = newItems
+	return appList, nil
 }
 
 // Create creates an application
-func (s *Server) Create(ctx context.Context, a *appv1.Application) (*appv1.Application, error) {
+func (s *Server) Create(ctx context.Context, q *ApplicationCreateRequest) (*appv1.Application, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications", "create", fmt.Sprintf("*/%s", q.Application.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	a := q.Application
 	err := s.validateApp(ctx, &a.Spec)
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Create(a)
+	a.SetCascadedDeletion(true)
+	out, err := s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Create(&a)
 	if apierr.IsAlreadyExists(err) {
 		// act idempotent if existing spec matches new spec
-		existing, err2 := s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Get(a.Name, metav1.GetOptions{})
-		if err2 == nil {
+		existing, getErr := s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Get(a.Name, metav1.GetOptions{})
+		if getErr != nil {
+			return nil, status.Errorf(codes.Internal, "unable to check existing application details: %v", err)
+		}
+		if q.Upsert != nil && *q.Upsert {
+			if !s.enf.EnforceClaims(ctx.Value("claims"), "applications", "update", fmt.Sprintf("*/%s", q.Application.Name)) {
+				return nil, grpc.ErrPermissionDenied
+			}
+			existing.Spec = a.Spec
+			out, err = s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Update(existing)
+		} else {
 			if reflect.DeepEqual(existing.Spec, a.Spec) {
 				return existing, nil
+			} else {
+				return nil, status.Errorf(codes.InvalidArgument, "existing application spec is different, use upsert flag to force update")
 			}
 		}
 	}
 	return out, err
 }
 
+// GetManifests returns application manifests
+func (s *Server) GetManifests(ctx context.Context, q *ApplicationManifestQuery) (*repository.ManifestResponse, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications/manifests", "get", fmt.Sprintf("*/%s", *q.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	app, err := s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Get(*q.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	repo := s.getRepo(ctx, app.Spec.Source.RepoURL)
+
+	conn, repoClient, err := s.repoClientset.NewRepositoryClient()
+	if err != nil {
+		return nil, err
+	}
+	defer util.Close(conn)
+	overrides := make([]*appv1.ComponentParameter, len(app.Spec.Source.ComponentParameterOverrides))
+	if app.Spec.Source.ComponentParameterOverrides != nil {
+		for i := range app.Spec.Source.ComponentParameterOverrides {
+			item := app.Spec.Source.ComponentParameterOverrides[i]
+			overrides[i] = &item
+		}
+	}
+
+	revision := app.Spec.Source.TargetRevision
+	if q.Revision != "" {
+		revision = q.Revision
+	}
+	manifestInfo, err := repoClient.GenerateManifest(context.Background(), &repository.ManifestRequest{
+		Repo:                        repo,
+		Environment:                 app.Spec.Source.Environment,
+		Path:                        app.Spec.Source.Path,
+		Revision:                    revision,
+		ComponentParameterOverrides: overrides,
+		AppLabel:                    app.Name,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return manifestInfo, nil
+}
+
 // Get returns an application by name
 func (s *Server) Get(ctx context.Context, q *ApplicationQuery) (*appv1.Application, error) {
-	return s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Get(q.Name, metav1.GetOptions{})
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications", "get", fmt.Sprintf("*/%s", *q.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	return s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Get(*q.Name, metav1.GetOptions{})
+}
+
+// ListResourceEvents returns a list of event resources
+func (s *Server) ListResourceEvents(ctx context.Context, q *ApplicationResourceEventsQuery) (*v1.EventList, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications/events", "get", fmt.Sprintf("*/%s", *q.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	config, namespace, err := s.getApplicationClusterConfig(*q.Name)
+	if err != nil {
+		return nil, err
+	}
+	kubeClientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	fieldSelector := fields.SelectorFromSet(map[string]string{
+		"involvedObject.name":      q.ResourceName,
+		"involvedObject.uid":       q.ResourceUID,
+		"involvedObject.namespace": namespace,
+	}).String()
+
+	log.Infof("Querying for resource events with field selector: %s", fieldSelector)
+	opts := metav1.ListOptions{FieldSelector: fieldSelector}
+
+	return kubeClientset.CoreV1().Events(namespace).List(opts)
 }
 
 // Update updates an application
-func (s *Server) Update(ctx context.Context, a *appv1.Application) (*appv1.Application, error) {
+func (s *Server) Update(ctx context.Context, q *ApplicationUpdateRequest) (*appv1.Application, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications", "update", fmt.Sprintf("*/%s", q.Application.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	a := q.Application
 	err := s.validateApp(ctx, &a.Spec)
 	if err != nil {
 		return nil, err
@@ -111,48 +210,51 @@ func (s *Server) Update(ctx context.Context, a *appv1.Application) (*appv1.Appli
 }
 
 // UpdateSpec updates an application spec
-func (s *Server) UpdateSpec(ctx context.Context, q *ApplicationSpecRequest) (*appv1.ApplicationSpec, error) {
-	err := s.validateApp(ctx, q.Spec)
+func (s *Server) UpdateSpec(ctx context.Context, q *ApplicationUpdateSpecRequest) (*appv1.ApplicationSpec, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications", "update", fmt.Sprintf("*/%s", *q.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	err := s.validateApp(ctx, &q.Spec)
 	if err != nil {
 		return nil, err
 	}
 	patch, err := json.Marshal(map[string]appv1.ApplicationSpec{
-		"spec": *q.Spec,
+		"spec": q.Spec,
 	})
 	if err != nil {
 		return nil, err
 	}
-	_, err = s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Patch(q.AppName, types.MergePatchType, patch)
-	return q.Spec, err
+	_, err = s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Patch(*q.Name, types.MergePatchType, patch)
+	return &q.Spec, err
 }
 
 // Delete removes an application and all associated resources
-func (s *Server) Delete(ctx context.Context, q *DeleteApplicationRequest) (*ApplicationResponse, error) {
-	var err error
-	server := q.Server
-	namespace := q.Namespace
-	if server == "" || namespace == "" {
-		server, namespace, err = s.getApplicationDestination(ctx, q.Name)
-		if err != nil && !apierr.IsNotFound(err) && !q.Force {
+func (s *Server) Delete(ctx context.Context, q *ApplicationDeleteRequest) (*ApplicationResponse, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications", "delete", fmt.Sprintf("*/%s", *q.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	a, err := s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Get(*q.Name, metav1.GetOptions{})
+	if err != nil && !apierr.IsNotFound(err) {
+		return nil, err
+	}
+
+	if q.Cascade != nil && *q.Cascade != a.CascadedDeletion() {
+		a.SetCascadedDeletion(*q.Cascade)
+		patch, err := json.Marshal(map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"finalizers": a.Finalizers,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		_, err = s.appclientset.ArgoprojV1alpha1().Applications(a.Namespace).Patch(a.Name, types.MergePatchType, patch)
+		if err != nil {
 			return nil, err
 		}
 	}
 
-	if server != "" && namespace != "" {
-		clst, err := s.clusterService.Get(ctx, &cluster.ClusterQuery{Server: server})
-		if err != nil && !q.Force {
-			return nil, err
-		}
-		if clst != nil {
-			config := clst.RESTConfig()
-			err = kube.DeleteResourceWithLabel(config, namespace, common.LabelApplicationName, q.Name)
-			if err != nil && !q.Force {
-				return nil, err
-			}
-		}
-	}
-
-	err = s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Delete(q.Name, &metav1.DeleteOptions{})
+	err = s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Delete(*q.Name, &metav1.DeleteOptions{})
 	if err != nil && !apierr.IsNotFound(err) {
 		return nil, err
 	}
@@ -165,11 +267,16 @@ func (s *Server) Watch(q *ApplicationQuery, ws ApplicationService_WatchServer) e
 	if err != nil {
 		return err
 	}
+	claims := ws.Context().Value("claims")
 	done := make(chan bool)
 	go func() {
 		for next := range w.ResultChan() {
 			app := *next.Object.(*appv1.Application)
-			if q.Name == "" || q.Name == app.Name {
+			if q.Name == nil || *q.Name == "" || *q.Name == app.Name {
+				if !s.enf.EnforceClaims(claims, "applications", "get", fmt.Sprintf("*/%s", app.Name)) {
+					// do not emit apps user does not have accessing
+					continue
+				}
 				err = ws.Send(&appv1.ApplicationWatchEvent{
 					Type:        next.Type,
 					Application: app,
@@ -201,7 +308,7 @@ func (s *Server) validateApp(ctx context.Context, spec *appv1.ApplicationSpec) e
 		return err
 	}
 	defer util.Close(conn)
-	repoRes, err := s.repoService.Get(ctx, &apirepository.RepoQuery{Repo: spec.Source.RepoURL})
+	repoRes, err := s.db.GetRepository(ctx, spec.Source.RepoURL)
 	if err != nil {
 		if errStatus, ok := status.FromError(err); ok && errStatus.Code() == codes.NotFound {
 			// The repo has not been added to ArgoCD so we do not have credentials to access it.
@@ -239,19 +346,31 @@ func (s *Server) validateApp(ctx context.Context, spec *appv1.ApplicationSpec) e
 		return status.Errorf(codes.InvalidArgument, "app.yaml is not a valid ksonnet app spec")
 	}
 
+	// Default revision to HEAD if unspecified
+	if spec.Source.TargetRevision == "" {
+		spec.Source.TargetRevision = "HEAD"
+	}
+
 	// Verify the specified environment is defined in it
 	envSpec, ok := appSpec.Environments[spec.Source.Environment]
 	if !ok || envSpec == nil {
-		return status.Errorf(codes.InvalidArgument, "environment '%s' does not exist in app", spec.Source.Environment)
+		return status.Errorf(codes.InvalidArgument, "environment '%s' does not exist in ksonnet app", spec.Source.Environment)
 	}
+
+	// If server and namespace are not supplied, pull it from the app.yaml
+	if spec.Destination.Server == "" {
+		spec.Destination.Server = envSpec.Destination.Server
+	}
+	if spec.Destination.Namespace == "" {
+		spec.Destination.Namespace = envSpec.Destination.Namespace
+	}
+
 	// Ensure the k8s cluster the app is referencing, is configured in ArgoCD
-	// NOTE: need to check if it was overridden in the destination spec
-	clusterURL := envSpec.Destination.Server
-	if spec.Destination != nil && spec.Destination.Server != "" {
-		clusterURL = spec.Destination.Server
-	}
-	_, err = s.clusterService.Get(ctx, &cluster.ClusterQuery{Server: clusterURL})
+	_, err = s.db.GetCluster(ctx, spec.Destination.Server)
 	if err != nil {
+		if apierr.IsNotFound(err) {
+			return status.Errorf(codes.InvalidArgument, "cluster '%s' has not been configured", spec.Destination.Server)
+		}
 		return err
 	}
 	return nil
@@ -262,7 +381,7 @@ func (s *Server) getApplicationClusterConfig(applicationName string) (*rest.Conf
 	if err != nil {
 		return nil, "", err
 	}
-	clst, err := s.clusterService.Get(context.Background(), &cluster.ClusterQuery{Server: server})
+	clst, err := s.db.GetCluster(context.Background(), server)
 	if err != nil {
 		return nil, "", err
 	}
@@ -275,7 +394,7 @@ func (s *Server) ensurePodBelongsToApp(applicationName string, podName, namespac
 	if err != nil {
 		return err
 	}
-	wrongPodError := fmt.Errorf("pod %s does not belong to application %s", podName, applicationName)
+	wrongPodError := status.Errorf(codes.InvalidArgument, "pod %s does not belong to application %s", podName, applicationName)
 	if pod.Labels == nil {
 		return wrongPodError
 	}
@@ -285,8 +404,11 @@ func (s *Server) ensurePodBelongsToApp(applicationName string, podName, namespac
 	return nil
 }
 
-func (s *Server) DeletePod(ctx context.Context, q *DeletePodQuery) (*ApplicationResponse, error) {
-	config, namespace, err := s.getApplicationClusterConfig(q.ApplicationName)
+func (s *Server) DeletePod(ctx context.Context, q *ApplicationDeletePodRequest) (*ApplicationResponse, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications/pods", "delete", fmt.Sprintf("*/%s", *q.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	config, namespace, err := s.getApplicationClusterConfig(*q.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -294,19 +416,23 @@ func (s *Server) DeletePod(ctx context.Context, q *DeletePodQuery) (*Application
 	if err != nil {
 		return nil, err
 	}
-	err = s.ensurePodBelongsToApp(q.ApplicationName, q.PodName, namespace, kubeClientset)
+	err = s.ensurePodBelongsToApp(*q.Name, *q.PodName, namespace, kubeClientset)
 	if err != nil {
 		return nil, err
 	}
-	err = kubeClientset.CoreV1().Pods(namespace).Delete(q.PodName, &metav1.DeleteOptions{})
+	err = kubeClientset.CoreV1().Pods(namespace).Delete(*q.PodName, &metav1.DeleteOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return &ApplicationResponse{}, nil
 }
 
-func (s *Server) PodLogs(q *PodLogsQuery, ws ApplicationService_PodLogsServer) error {
-	config, namespace, err := s.getApplicationClusterConfig(q.ApplicationName)
+func (s *Server) PodLogs(q *ApplicationPodLogsQuery, ws ApplicationService_PodLogsServer) error {
+	claims := ws.Context().Value("claims")
+	if !s.enf.EnforceClaims(claims, "applications/logs", "get", fmt.Sprintf("*/%s", *q.Name)) {
+		return grpc.ErrPermissionDenied
+	}
+	config, namespace, err := s.getApplicationClusterConfig(*q.Name)
 	if err != nil {
 		return err
 	}
@@ -314,7 +440,7 @@ func (s *Server) PodLogs(q *PodLogsQuery, ws ApplicationService_PodLogsServer) e
 	if err != nil {
 		return err
 	}
-	err = s.ensurePodBelongsToApp(q.ApplicationName, q.PodName, namespace, kubeClientset)
+	err = s.ensurePodBelongsToApp(*q.Name, *q.PodName, namespace, kubeClientset)
 	if err != nil {
 		return err
 	}
@@ -326,7 +452,7 @@ func (s *Server) PodLogs(q *PodLogsQuery, ws ApplicationService_PodLogsServer) e
 	if q.TailLines > 0 {
 		tailLines = &q.TailLines
 	}
-	stream, err := kubeClientset.CoreV1().Pods(namespace).GetLogs(q.PodName, &v1.PodLogOptions{
+	stream, err := kubeClientset.CoreV1().Pods(namespace).GetLogs(*q.PodName, &v1.PodLogOptions{
 		Container:    q.Container,
 		Follow:       q.Follow,
 		Timestamps:   true,
@@ -351,7 +477,7 @@ func (s *Server) PodLogs(q *PodLogsQuery, ws ApplicationService_PodLogsServer) e
 					if line != "" {
 						err = ws.Send(&LogEntry{
 							Content:   line,
-							TimeStamp: &metaLogTime,
+							TimeStamp: metaLogTime,
 						})
 						if err != nil {
 							log.Warnf("Unable to send stream message: %v", err)
@@ -371,144 +497,17 @@ func (s *Server) PodLogs(q *PodLogsQuery, ws ApplicationService_PodLogsServer) e
 	return nil
 }
 
-// Sync syncs an application to its target state
-func (s *Server) Sync(ctx context.Context, syncReq *ApplicationSyncRequest) (*ApplicationSyncResult, error) {
-	return s.deployAndPersistDeploymentInfo(ctx, syncReq.Name, syncReq.Revision, nil, syncReq.DryRun, syncReq.Prune)
-}
-
-func (s *Server) Rollback(ctx context.Context, rollbackReq *ApplicationRollbackRequest) (*ApplicationSyncResult, error) {
-	app, err := s.Get(ctx, &ApplicationQuery{Name: rollbackReq.Name})
-	if err != nil {
-		return nil, err
-	}
-	var deploymentInfo *appv1.DeploymentInfo
-	for _, info := range app.Status.RecentDeployments {
-		if info.ID == rollbackReq.ID {
-			deploymentInfo = &info
-			break
-		}
-	}
-	if deploymentInfo == nil {
-		return nil, status.Errorf(codes.InvalidArgument, "application %s does not have deployment with id %v", rollbackReq.Name, rollbackReq.ID)
-	}
-	return s.deployAndPersistDeploymentInfo(ctx, rollbackReq.Name, deploymentInfo.Revision, &deploymentInfo.ComponentParameterOverrides, rollbackReq.DryRun, rollbackReq.Prune)
-}
-
-func (s *Server) deployAndPersistDeploymentInfo(
-	ctx context.Context, appName string, revision string, overrides *[]appv1.ComponentParameter, dryRun bool, prune bool) (*ApplicationSyncResult, error) {
-
-	log.Infof("Syncing application %s", appName)
-	app, err := s.Get(ctx, &ApplicationQuery{Name: appName})
-	if err != nil {
-		return nil, err
-	}
-
-	if revision != "" {
-		app.Spec.Source.TargetRevision = revision
-	}
-
-	if overrides != nil {
-		app.Spec.Source.ComponentParameterOverrides = *overrides
-	}
-
-	res, manifest, err := s.deploy(ctx, app, dryRun, prune)
-	if err != nil {
-		return nil, err
-	}
-	if !dryRun {
-		err = s.persistDeploymentInfo(ctx, appName, manifest.Revision, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return res, err
-}
-
-func (s *Server) persistDeploymentInfo(ctx context.Context, appName string, revision string, overrides *[]appv1.ComponentParameter) error {
-	app, err := s.Get(ctx, &ApplicationQuery{Name: appName})
-	if err != nil {
-		return err
-	}
-
-	repo := s.getRepo(ctx, app.Spec.Source.RepoURL)
-	conn, repoClient, err := s.repoClientset.NewRepositoryClient()
-	if err != nil {
-		return err
-	}
-	defer util.Close(conn)
-
-	log.Infof("Retrieving deployment params for application %s", appName)
-	envParams, err := repoClient.GetEnvParams(ctx, &repository.EnvParamsRequest{
-		Repo:        repo,
-		Environment: app.Spec.Source.Environment,
-		Path:        app.Spec.Source.Path,
-		Revision:    revision,
-	})
-
-	if err != nil {
-		return err
-	}
-
-	params := make([]appv1.ComponentParameter, len(envParams.Params))
-	for i := range envParams.Params {
-		param := *envParams.Params[i]
-		params[i] = param
-	}
-	var nextId int64 = 0
-	if len(app.Status.RecentDeployments) > 0 {
-		nextId = app.Status.RecentDeployments[len(app.Status.RecentDeployments)-1].ID + 1
-	}
-	recentDeployments := append(app.Status.RecentDeployments, appv1.DeploymentInfo{
-		ComponentParameterOverrides: app.Spec.Source.ComponentParameterOverrides,
-		Revision:                    revision,
-		Params:                      params,
-		DeployedAt:                  metav1.NewTime(time.Now()),
-		ID:                          nextId,
-	})
-	if len(recentDeployments) > maxRecentDeploymentsCnt {
-		recentDeployments = recentDeployments[1 : maxRecentDeploymentsCnt+1]
-	}
-
-	patch, err := json.Marshal(map[string]map[string][]appv1.DeploymentInfo{
-		"status": {
-			"recentDeployments": recentDeployments,
-		},
-	})
-	if err != nil {
-		return err
-	}
-	_, err = s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Patch(app.Name, types.MergePatchType, patch)
-	return err
-}
-
 func (s *Server) getApplicationDestination(ctx context.Context, name string) (string, string, error) {
 	app, err := s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Get(name, metav1.GetOptions{})
 	if err != nil {
 		return "", "", err
-	} else {
-		repo := s.getRepo(ctx, app.Spec.Source.RepoURL)
-		conn, repoClient, err := s.repoClientset.NewRepositoryClient()
-		if err != nil {
-			return "", "", err
-		}
-		defer util.Close(conn)
-		manifestInfo, err := repoClient.GenerateManifest(ctx, &repository.ManifestRequest{
-			Repo:        repo,
-			Environment: app.Spec.Source.Environment,
-			Path:        app.Spec.Source.Path,
-			Revision:    app.Spec.Source.TargetRevision,
-			AppLabel:    app.Name,
-		})
-		if err != nil {
-			return "", "", err
-		}
-		server, namespace := argoutil.ResolveServerNamespace(app.Spec.Destination, manifestInfo)
-		return server, namespace, nil
 	}
+	server, namespace := app.Spec.Destination.Server, app.Spec.Destination.Namespace
+	return server, namespace, nil
 }
 
 func (s *Server) getRepo(ctx context.Context, repoURL string) *appv1.Repository {
-	repo, err := s.repoService.Get(ctx, &apirepository.RepoQuery{Repo: repoURL})
+	repo, err := s.db.GetRepository(ctx, repoURL)
 	if err != nil {
 		// If we couldn't retrieve from the repo service, assume public repositories
 		repo = &appv1.Repository{Repo: repoURL}
@@ -516,134 +515,57 @@ func (s *Server) getRepo(ctx context.Context, repoURL string) *appv1.Repository 
 	return repo
 }
 
-func (s *Server) deploy(
-	ctx context.Context,
-	app *appv1.Application,
-	dryRun bool,
-	prune bool) (*ApplicationSyncResult, *repository.ManifestResponse, error) {
-
-	repo := s.getRepo(ctx, app.Spec.Source.RepoURL)
-	conn, repoClient, err := s.repoClientset.NewRepositoryClient()
-	if err != nil {
-		return nil, nil, err
+// Sync syncs an application to its target state
+func (s *Server) Sync(ctx context.Context, syncReq *ApplicationSyncRequest) (*appv1.Application, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications", "sync", fmt.Sprintf("*/%s", *syncReq.Name)) {
+		return nil, grpc.ErrPermissionDenied
 	}
-	defer util.Close(conn)
-	overrides := make([]*appv1.ComponentParameter, len(app.Spec.Source.ComponentParameterOverrides))
-	if app.Spec.Source.ComponentParameterOverrides != nil {
-		for i := range app.Spec.Source.ComponentParameterOverrides {
-			item := app.Spec.Source.ComponentParameterOverrides[i]
-			overrides[i] = &item
-		}
-	}
-
-	manifestInfo, err := repoClient.GenerateManifest(ctx, &repository.ManifestRequest{
-		Repo:                        repo,
-		Environment:                 app.Spec.Source.Environment,
-		Path:                        app.Spec.Source.Path,
-		Revision:                    app.Spec.Source.TargetRevision,
-		ComponentParameterOverrides: overrides,
-		AppLabel:                    app.Name,
+	return s.setAppOperation(ctx, *syncReq.Name, func(app *appv1.Application) (*appv1.Operation, error) {
+		return &appv1.Operation{
+			Sync: &appv1.SyncOperation{
+				Revision: syncReq.Revision,
+				Prune:    syncReq.Prune,
+				DryRun:   syncReq.DryRun,
+			},
+		}, nil
 	})
-	if err != nil {
-		return nil, nil, err
-	}
+}
 
-	targetObjs := make([]*unstructured.Unstructured, len(manifestInfo.Manifests))
-	for i, manifest := range manifestInfo.Manifests {
-		obj, err := appv1.UnmarshalToUnstructured(manifest)
+func (s *Server) Rollback(ctx context.Context, rollbackReq *ApplicationRollbackRequest) (*appv1.Application, error) {
+	if !s.enf.EnforceClaims(ctx.Value("claims"), "applications", "rollback", fmt.Sprintf("*/%s", *rollbackReq.Name)) {
+		return nil, grpc.ErrPermissionDenied
+	}
+	return s.setAppOperation(ctx, *rollbackReq.Name, func(app *appv1.Application) (*appv1.Operation, error) {
+		return &appv1.Operation{
+			Rollback: &appv1.RollbackOperation{
+				ID:     rollbackReq.ID,
+				Prune:  rollbackReq.Prune,
+				DryRun: rollbackReq.DryRun,
+			},
+		}, nil
+	})
+}
+
+func (s *Server) setAppOperation(ctx context.Context, appName string, operationCreator func(app *appv1.Application) (*appv1.Operation, error)) (*appv1.Application, error) {
+	for {
+		a, err := s.Get(ctx, &ApplicationQuery{Name: &appName})
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		targetObjs[i] = obj
-	}
-
-	server, namespace := argoutil.ResolveServerNamespace(app.Spec.Destination, manifestInfo)
-
-	comparison, err := s.appComparator.CompareAppState(server, namespace, targetObjs, app)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	clst, err := s.clusterService.Get(ctx, &cluster.ClusterQuery{Server: server})
-	if err != nil {
-		return nil, nil, err
-	}
-	config := clst.RESTConfig()
-
-	var syncRes ApplicationSyncResult
-	syncRes.Resources = make([]*ResourceDetails, 0)
-	for _, resourceState := range comparison.Resources {
-		var liveObj, targetObj *unstructured.Unstructured
-
-		if resourceState.LiveState != "null" {
-			liveObj = &unstructured.Unstructured{}
-			err = json.Unmarshal([]byte(resourceState.LiveState), liveObj)
-			if err != nil {
-				return nil, nil, err
-			}
+		if a.Operation != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "another operation is already in progress")
 		}
-
-		if resourceState.TargetState != "null" {
-			targetObj = &unstructured.Unstructured{}
-			err = json.Unmarshal([]byte(resourceState.TargetState), targetObj)
-			if err != nil {
-				return nil, nil, err
-			}
+		op, err := operationCreator(a)
+		if err != nil {
+			return nil, err
 		}
-
-		needsCreate := liveObj == nil
-		needsDelete := targetObj == nil
-
-		obj := targetObj
-		if obj == nil {
-			obj = liveObj
-		}
-		resDetails := ResourceDetails{
-			Name:      obj.GetName(),
-			Kind:      obj.GetKind(),
-			Namespace: namespace,
-		}
-
-		if resourceState.Status == appv1.ComparisonStatusSynced {
-			resDetails.Message = fmt.Sprintf("already synced")
-		} else if dryRun {
-			if needsCreate {
-				resDetails.Message = fmt.Sprintf("will create")
-			} else if needsDelete {
-				if prune {
-					resDetails.Message = fmt.Sprintf("will delete")
-				} else {
-					resDetails.Message = fmt.Sprintf("will be ignored (should be deleted)")
-				}
-			} else {
-				resDetails.Message = fmt.Sprintf("will update")
-			}
+		a.Operation = op
+		a.Status.OperationState = nil
+		_, err = s.appclientset.ArgoprojV1alpha1().Applications(s.ns).Update(a)
+		if err != nil && apierr.IsConflict(err) {
+			log.Warnf("Failed to set operation for app '%s' due to update conflict. Retrying again...", appName)
 		} else {
-			if needsDelete {
-				if prune {
-					err = kube.DeleteResource(config, liveObj, namespace)
-					if err != nil {
-						return nil, nil, err
-					}
-
-					resDetails.Message = fmt.Sprintf("deleted")
-				} else {
-					resDetails.Message = fmt.Sprintf("ignored (should be deleted)")
-				}
-			} else {
-				_, err := kube.ApplyResource(config, targetObj, namespace)
-				if err != nil {
-					return nil, nil, err
-				}
-				if needsCreate {
-					resDetails.Message = fmt.Sprintf("created")
-				} else {
-					resDetails.Message = fmt.Sprintf("updated")
-				}
-			}
+			return a, err
 		}
-		syncRes.Resources = append(syncRes.Resources, &resDetails)
 	}
-	syncRes.Message = "successfully synced"
-	return &syncRes, manifestInfo, nil
 }

@@ -1,8 +1,9 @@
 package common
 
 import (
-	"github.com/argoproj/argo-cd/pkg/apis/application"
 	rbacv1 "k8s.io/api/rbac/v1"
+
+	"github.com/argoproj/argo-cd/pkg/apis/application"
 )
 
 const (
@@ -16,13 +17,37 @@ const (
 	SecretTypeCluster = "cluster"
 
 	// AuthCookieName is the HTTP cookie name where we store our auth token
-	AuthCookieName = "argocd.argoproj.io/auth-token"
+	AuthCookieName = "argocd.token"
+	// ResourcesFinalizerName is a number of application CRD finalizer
+	ResourcesFinalizerName = "resources-finalizer." + MetadataPrefix
 )
 
 const (
-	ArgoCDAdminUsername = "admin"
-	ArgoCDSecretName    = "argocd-secret"
-	ArgoCDConfigMapName = "argocd-cm"
+	ArgoCDAdminUsername     = "admin"
+	ArgoCDSecretName        = "argocd-secret"
+	ArgoCDConfigMapName     = "argocd-cm"
+	ArgoCDRBACConfigMapName = "argocd-rbac-cm"
+)
+
+const (
+	// DexAPIEndpoint is the endpoint where we serve the Dex API server
+	DexAPIEndpoint = "/api/dex"
+	// LoginEndpoint is ArgoCD's shorthand login endpoint which redirects to dex's OAuth 2.0 provider's consent page
+	LoginEndpoint = "/auth/login"
+	// CallbackEndpoint is ArgoCD's final callback endpoint we reach after OAuth 2.0 login flow has been completed
+	CallbackEndpoint = "/auth/callback"
+	// ArgoCDClientAppName is name of the Oauth client app used when registering our web app to dex
+	ArgoCDClientAppName = "ArgoCD"
+	// ArgoCDClientAppID is the Oauth client ID we will use when registering our app to dex
+	ArgoCDClientAppID = "argo-cd"
+	// ArgoCDCLIClientAppName is name of the Oauth client app used when registering our CLI to dex
+	ArgoCDCLIClientAppName = "ArgoCD CLI"
+	// ArgoCDCLIClientAppID is the Oauth client ID we will use when registering our CLI to dex
+	ArgoCDCLIClientAppID = "argo-cd-cli"
+	// EnvVarSSODebug is an environment variable to enable additional OAuth debugging in the API server
+	EnvVarSSODebug = "ARGOCD_SSO_DEBUG"
+	// EnvVarRBACDebug is an environment variable to enable additional RBAC debugging in the API server
+	EnvVarRBACDebug = "ARGOCD_RBAC_DEBUG"
 )
 
 var (
@@ -31,6 +56,13 @@ var (
 
 	// LabelKeySecretType contains the type of argocd secret (either 'cluster' or 'repo')
 	LabelKeySecretType = MetadataPrefix + "/secret-type"
+
+	// AnnotationConnectionStatus contains connection state status
+	AnnotationConnectionStatus = MetadataPrefix + "/connection-status"
+	// AnnotationConnectionMessage contains additional information about connection status
+	AnnotationConnectionMessage = MetadataPrefix + "/connection-message"
+	// AnnotationConnectionModifiedAt contains timestamp when connection state had been modified
+	AnnotationConnectionModifiedAt = MetadataPrefix + "/connection-modified-at"
 
 	// LabelKeyApplicationControllerInstanceID is the label which allows to separate application among multiple running application controllers.
 	LabelKeyApplicationControllerInstanceID = application.ApplicationFullName + "/controller-instanceid"

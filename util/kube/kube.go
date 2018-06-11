@@ -9,8 +9,11 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
+	"time"
 
+	"github.com/argoproj/argo-cd/util/cache"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -41,9 +44,15 @@ const (
 	DeploymentKind = "Deployment"
 )
 
+const (
+	apiResourceCacheDuration = 10 * time.Minute
+)
+
 var (
-	// location to use for generating temporary files, such as the ca.crt needed by kubectl
+	// location to use for generating temporary files, such as the kubeconfig needed by kubectl
 	kubectlTempDir string
+	// apiResourceCache is a in-memory cache of api resources supported by a k8s server
+	apiResourceCache = cache.NewInMemoryCache(apiResourceCacheDuration)
 )
 
 func init() {
@@ -84,19 +93,33 @@ func MustToUnstructured(obj interface{}) *unstructured.Unstructured {
 	return uObj
 }
 
-// ListAPIResources discovers all API resources supported by the Kube API sererver
-func ListAPIResources(disco discovery.DiscoveryInterface) ([]metav1.APIResource, error) {
-	apiResources := make([]metav1.APIResource, 0)
-	resList, err := disco.ServerResources()
+// GetCachedServerResources discovers API resources supported by a Kube API server.
+// Caches the results for apiResourceCacheDuration (per host)
+func GetCachedServerResources(host string, disco discovery.DiscoveryInterface) ([]*metav1.APIResourceList, error) {
+	var resList []*metav1.APIResourceList
+	cacheKey := fmt.Sprintf("apires|%s", host)
+	err := apiResourceCache.Get(cacheKey, &resList)
+	if err == nil {
+		log.Debugf("cache hit: %s", cacheKey)
+		return resList, nil
+	}
+	if err == cache.ErrCacheMiss {
+		log.Infof("cache miss: %s", cacheKey)
+	} else {
+		log.Warnf("cache error %s: %v", cacheKey, err)
+	}
+	resList, err = disco.ServerResources()
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	for _, resGroup := range resList {
-		for _, apiRes := range resGroup.APIResources {
-			apiResources = append(apiResources, apiRes)
-		}
+	err = apiResourceCache.Set(&cache.Item{
+		Key:    cacheKey,
+		Object: resList,
+	})
+	if err != nil {
+		log.Warnf("Failed to cache %s: %v", cacheKey, err)
 	}
-	return apiResources, nil
+	return resList, nil
 }
 
 // GetLiveResource returns the corresponding live resource from a unstructured object
@@ -124,7 +147,7 @@ func WatchResourcesWithLabel(ctx context.Context, config *rest.Config, namespace
 	if err != nil {
 		return nil, err
 	}
-	serverResources, err := disco.ServerResources()
+	serverResources, err := GetCachedServerResources(config.Host, disco)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +208,7 @@ func GetResourcesWithLabel(config *rest.Config, namespace string, labelName stri
 	if err != nil {
 		return nil, err
 	}
-	resources, err := disco.ServerResources()
+	resources, err := GetCachedServerResources(config.Host, disco)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +274,7 @@ func DeleteResourceWithLabel(config *rest.Config, namespace string, labelName st
 	if err != nil {
 		return err
 	}
-	resources, err := disco.ServerResources()
+	resources, err := GetCachedServerResources(config.Host, disco)
 	if err != nil {
 		return err
 	}
@@ -402,37 +425,39 @@ func DeleteResource(config *rest.Config, obj *unstructured.Unstructured, namespa
 }
 
 // ApplyResource performs an apply of a unstructured resource
-func ApplyResource(config *rest.Config, obj *unstructured.Unstructured, namespace string) (*unstructured.Unstructured, error) {
+func ApplyResource(config *rest.Config, obj *unstructured.Unstructured, namespace string, dryRun bool) (string, error) {
 	log.Infof("Applying resource %s/%s in cluster: %s, namespace: %s", obj.GetKind(), obj.GetName(), config.Host, namespace)
 	f, err := ioutil.TempFile(kubectlTempDir, "")
 	if err != nil {
-		return nil, fmt.Errorf("Failed to generate temp file for kubeconfig: %v", err)
+		return "", fmt.Errorf("Failed to generate temp file for kubeconfig: %v", err)
 	}
 	_ = f.Close()
 	err = WriteKubeConfig(config, namespace, f.Name())
 	if err != nil {
-		return nil, fmt.Errorf("Failed to write kubeconfig: %v", err)
+		return "", fmt.Errorf("Failed to write kubeconfig: %v", err)
 	}
 	defer deleteFile(f.Name())
-
 	manifestBytes, err := json.Marshal(obj)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	cmd := exec.Command("kubectl", "--kubeconfig", f.Name(), "-n", namespace, "apply", "-o", "json", "-f", "-")
+	applyArgs := []string{"--kubeconfig", f.Name(), "-n", namespace, "apply", "-f", "-"}
+	if dryRun {
+		applyArgs = append(applyArgs, "--dry-run")
+	}
+	cmd := exec.Command("kubectl", applyArgs...)
 	log.Info(cmd.Args)
 	cmd.Stdin = bytes.NewReader(manifestBytes)
 	out, err := cmd.Output()
 	if err != nil {
-		exErr := err.(*exec.ExitError)
-		return nil, fmt.Errorf("failed to apply '%s': %s", obj.GetName(), exErr.Stderr)
+		if exErr, ok := err.(*exec.ExitError); ok {
+			// this makes the output a little better to read
+			errMsg := strings.Replace(strings.TrimSpace(string(exErr.Stderr)), ": error when creating \"STDIN\"", "", -1)
+			return "", errors.New(errMsg)
+		}
+		return "", err
 	}
-	var liveObj unstructured.Unstructured
-	err = json.Unmarshal(out, &liveObj)
-	if err != nil {
-		return nil, fmt.Errorf("failed to apply '%s': %s", obj.GetName(), err)
-	}
-	return &liveObj, nil
+	return strings.TrimSpace(string(out)), nil
 }
 
 // WriteKubeConfig takes a rest.Config and writes it as a kubeconfig at the specified path

@@ -19,6 +19,7 @@ type Client interface {
 	Fetch() error
 	Checkout(revision string) error
 	LsRemote(revision string) (string, error)
+	LsFiles(path string) ([]string, error)
 	CommitSHA() (string, error)
 	Reset() error
 }
@@ -112,15 +113,18 @@ func (m *nativeGitClient) setCredentials() error {
 			return err
 		}
 	}
-	if m.sshPrivateKey != "" {
-		log.Debug("Setting SSH credentials")
-		sshPrivateKeyFile := path.Join(".git", "ssh-private-key")
-		err := ioutil.WriteFile(sshPrivateKeyFile, []byte(m.sshPrivateKey), 0600)
-		if err != nil {
-			return fmt.Errorf("failed to set git credentials: %v", err)
+	if IsSSHURL(m.repoURL) {
+		sshCmd := gitSSHCommand
+		if m.sshPrivateKey != "" {
+			log.Debug("Setting SSH credentials")
+			sshPrivateKeyFile := path.Join(".git", "ssh-private-key")
+			err := ioutil.WriteFile(sshPrivateKeyFile, []byte(m.sshPrivateKey), 0600)
+			if err != nil {
+				return fmt.Errorf("failed to set git credentials: %v", err)
+			}
+			sshCmd += sshCmd + " -i " + sshPrivateKeyFile
 		}
-		sshCmd := fmt.Sprintf("ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i %s", sshPrivateKeyFile)
-		_, err = m.runCmd("git", "config", "--local", "core.sshCommand", sshCmd)
+		_, err := m.runCmd("git", "config", "--local", "core.sshCommand", sshCmd)
 		if err != nil {
 			return err
 		}
@@ -141,8 +145,27 @@ func (m *nativeGitClient) Fetch() error {
 	if _, err := m.runCmd("git", "remote", "set-head", "origin", "-a"); err != nil {
 		return err
 	}
+	return nil
+}
+
+// LsFiles lists the local working tree, including only files that are under source control
+func (m *nativeGitClient) LsFiles(path string) ([]string, error) {
+	out, err := m.runCmd("git", "ls-files", "--full-name", "-z", "--", path)
+	if err != nil {
+		return nil, err
+	}
+	// remove last element, which is blank regardless of whether we're using nullbyte or newline
+	ss := strings.Split(out, "\000")
+	return ss[:len(ss)-1], nil
+}
+
+// Reset resets local changes in a repository
+func (m *nativeGitClient) Reset() error {
+	if _, err := m.runCmd("git", "reset", "--hard", "origin/HEAD"); err != nil {
+		return err
+	}
 	// Delete all local branches (we must first detach so we are not checked out a branch we are about to delete)
-	if _, err = m.runCmd("git", "checkout", "--detach", "origin/HEAD"); err != nil {
+	if _, err := m.runCmd("git", "checkout", "--detach", "origin/HEAD"); err != nil {
 		return err
 	}
 	branchesOut, err := m.runCmd("git", "for-each-ref", "--format=%(refname:short)", "refs/heads/")
@@ -157,14 +180,6 @@ func (m *nativeGitClient) Fetch() error {
 		if _, err = m.runCmd("git", args...); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// Reset resets local changes in a repository
-func (m *nativeGitClient) Reset() error {
-	if _, err := m.runCmd("git", "reset", "--hard", "origin/HEAD"); err != nil {
-		return err
 	}
 	if _, err := m.runCmd("git", "clean", "-f"); err != nil {
 		return err
