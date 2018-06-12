@@ -70,7 +70,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
             //        sh "BUILD_TAG=${env.BUILD_TAG} mvn -s settings.xml --batch-mode clean deploy -Ddockerfile.username=${DOCKER_USERNAME} -Ddockerfile.password=${DOCKER_PASSWORD}"
             //    }
             //}
-        }
+//        }
         // Handle the PR build
         if (isPR) {
             stage("Skipping Deploy") {
