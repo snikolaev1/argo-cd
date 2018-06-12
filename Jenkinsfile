@@ -24,7 +24,6 @@ def stage_timeout = 20
 def git_timeout = 2
 def preprodOnly = true
 
-
 podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
     containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
     containerTemplate(name: 'maven', image: 'maven:3.5-jdk-8', ttyEnabled: true, command: 'cat', args: ''),
