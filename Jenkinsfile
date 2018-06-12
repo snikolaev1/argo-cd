@@ -4,7 +4,7 @@ def l1 = 'dev'
 def l2 = 'devx'
 def serviceName = 'argocd'
 def region = 'us-west-2'
-def iksType = 'dev'
+def iksType = 'preprod'
 def appName = "${l1}-${l2}-${serviceName}-${region}-${iksType}"
 def deployable_branches = ["master"]
 def argocd_server_ppd = "aac963bf86dd111e887a30a00e274fcb-1107323148.us-west-2.elb.amazonaws.com:443"
@@ -26,7 +26,7 @@ def preprodOnly = true
 
 podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
     containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
-    containerTemplate(name: 'docker2', image: 'docker:17.10-dind', ttyEnabled: true, privileged: true),
+    //containerTemplate(name: 'docker2', image: 'docker:17.10-dind', ttyEnabled: true, privileged: true),
     containerTemplate(name: 'maven', image: 'maven:3.5-jdk-8', ttyEnabled: true, command: 'cat', args: ''),
     containerTemplate(name: 'docker', image: 'docker:17.09', ttyEnabled: true, command: 'cat', args: '' ),
     containerTemplate(name: 'argocd', image: 'argoproj/argocd-cli:v0.4.7', ttyEnabled: true, command: 'cat', args: '' ),
@@ -61,10 +61,10 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
         def hasReleaseTag = sh(returnStdout: true, script: 'git tag --points-at HEAD').trim().startsWith('release-')
 
         // Build Stage
-        stage('Build') {
-                            container('cibuilder') {
-                                sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
-                            }
+//        stage('Build') {
+//                            container('cibuilder') {
+//                                sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
+//                            }
             //withCredentials([usernamePassword(credentialsId: "artifactory-${serviceName}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
             //    container('maven') {
             //        sh "BUILD_TAG=${env.BUILD_TAG} mvn -s settings.xml --batch-mode clean deploy -Ddockerfile.username=${DOCKER_USERNAME} -Ddockerfile.password=${DOCKER_PASSWORD}"
@@ -86,56 +86,56 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
             // lock the Preprod Deploy and Test stages
             lock(resource: "${appName}-${env}", inversePrecedence: true) {
                 timeout(time:"${stage_timeout}".toInteger(), unit:'MINUTES') {
-                    // The QAL Deploy stage
+                    // The Preprod Deploy stage
                     stage( "Deploy ${env}" ) {
                         withCredentials([string(credentialsId: "${argocd_password_ppd}", variable: 'ARGOCD_PASS')]) {
                             container('argocd') {
                                 println("Deploying to ${appName}")
-                                withCredentials([usernamePassword(credentialsId: 'github-svc-sbseg-ci', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
-                                    dir("deployment-${env}-${tag}") {
-                                        git url: "https://${deploy_repo}", credentialsId: "github-svc-sbseg-ci"
-                                        sh "/usr/local/bin/ks param set ${kson_compnt} image ${registry}/${image}:${tag} --env $env"
-                                        sh "git config --global user.email ${tag}@${ptNameVersion}"
-                                        sh "git config --global user.name ${tag}"
-                                        sh "git diff"
-                                        sh "git commit -am \"update container for ${env} during build ${tag}\""
-                                        lock("${deploy_repo}") {
-                                            timeout(time:"${git_timeout}".toInteger(), unit:'MINUTES') {
-                                                sh "git pull --rebase https://${GIT_USERNAME}:${GIT_PASSWORD}@${deploy_repo} master"
-                                                sh "git push https://${GIT_USERNAME}:${GIT_PASSWORD}@${deploy_repo} master"
-                                            }
-                                        }
-                                    }
-                                }
+                                //withCredentials([usernamePassword(credentialsId: 'github-svc-sbseg-ci', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                                //    dir("deployment-${env}-${tag}") {
+                                //        git url: "https://${deploy_repo}", credentialsId: "github-svc-sbseg-ci"
+                                //        sh "/usr/local/bin/ks param set ${kson_compnt} image ${registry}/${image}:${tag} --env $env"
+                                //        sh "git config --global user.email ${tag}@${ptNameVersion}"
+                                //        sh "git config --global user.name ${tag}"
+                                //        sh "git diff"
+                                //        sh "git commit -am \"update container for ${env} during build ${tag}\""
+                                //        lock("${deploy_repo}") {
+                                //            timeout(time:"${git_timeout}".toInteger(), unit:'MINUTES') {
+                                //                sh "git pull --rebase https://${GIT_USERNAME}:${GIT_PASSWORD}@${deploy_repo} master"
+                                //                sh "git push https://${GIT_USERNAME}:${GIT_PASSWORD}@${deploy_repo} master"
+                                //            }
+                                //        }
+                                //    }
+                                //}
                                 sh ("/argocd login ${argocd_server_ppd} --name context --insecure  --username admin --password $ARGOCD_PASS")
-                                sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path . --env ${env} --upsert"
+                                sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path argocd --env ${env} --upsert"
                                 sh "/argocd app sync ${appName}-${env}"
                                 sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
                             }
-                            container('cdtools') {
-                                sh "APP_NAME=${appName}-${env} ARGOCD_SERVER=\"https://${argocd_server_ppd}/api/v1\" USERNAME=admin PASSWORD=$ARGOCD_PASS HEALTH_URL_TEMPLATE=https://%s/health/full bash /usr/local/bin/ensure-service-up.sh"
-                            }
+                            //container('cdtools') {
+                            //    sh "APP_NAME=${appName}-${env} ARGOCD_SERVER=\"https://${argocd_server_ppd}/api/v1\" USERNAME=admin PASSWORD=$ARGOCD_PASS HEALTH_URL_TEMPLATE=https://%s/health/full bash /usr/local/bin/ensure-service-up.sh"
+                            //}
                         }
                     }
                     // The QAL Test stage
-                    stage("Test ${env}") {
-                        parallel (
-                            "1->Test 1": {
-                                container('maven') {
-                                    sh "echo Test 1"
-                                }
-                            },
-                            "1->Test 2": {
-                                container('maven') {
-                                    try {
-                                        sh "echo Test 2"
-                                    } catch (err) {
-                                        echo "Error running Test 2: ${err}"
-                                    }
-                                }
-                            }
-                        )
-                    } // Test
+                    //stage("Test ${env}") {
+                    //    parallel (
+                    //        "1->Test 1": {
+                    //            container('maven') {
+                    //                sh "echo Test 1"
+                    //            }
+                    //        },
+                    //        "1->Test 2": {
+                    //            container('maven') {
+                    //                try {
+                    //                    sh "echo Test 2"
+                    //                } catch (err) {
+                    //                    echo "Error running Test 2: ${err}"
+                    //                }
+                    //            }
+                    //        }
+                    //    )
+                    //} // Test
                 }
                 milestone()
             }
