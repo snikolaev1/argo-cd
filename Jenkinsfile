@@ -62,7 +62,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
         // Build Stage
         stage('Build') {
                             container('cibuilder') {
-                                sh ("mkdir -p /go/src/github.com/argoproj; ln -sf $(pwd) /go/src/github.com/argoproj/argo-cd ; dep ensure && make controller-image server-image repo-server-image")
+                                sh ("mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; dep ensure && make controller-image server-image repo-server-image")
                             }
             //withCredentials([usernamePassword(credentialsId: "artifactory-${serviceName}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
             //    container('maven') {
