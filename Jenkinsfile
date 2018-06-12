@@ -24,6 +24,7 @@ def stage_timeout = 20
 def git_timeout = 2
 def preprodOnly = true
 
+
 podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
     containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
     containerTemplate(name: 'docker2', image: 'docker:17.10-dind', ttyEnabled: true, privileged: true),
