@@ -26,6 +26,7 @@ def preprodOnly = true
 
 
 podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
+    containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
     containerTemplate(name: 'maven', image: 'maven:3.5-jdk-8', ttyEnabled: true, command: 'cat', args: ''),
     containerTemplate(name: 'docker', image: 'docker:17.09', ttyEnabled: true, command: 'cat', args: '' ),
     containerTemplate(name: 'argocd', image: 'argoproj/argocd-cli:v0.4.7', ttyEnabled: true, command: 'cat', args: '' ),
@@ -61,11 +62,14 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
 
         // Build Stage
         stage('Build') {
-            withCredentials([usernamePassword(credentialsId: "artifactory-${serviceName}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
-                container('maven') {
-                    sh "BUILD_TAG=${env.BUILD_TAG} mvn -s settings.xml --batch-mode clean deploy -Ddockerfile.username=${DOCKER_USERNAME} -Ddockerfile.password=${DOCKER_PASSWORD}"
-                }
-            }
+                            container('cibuilder') {
+                                sh ("cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
+                            }
+            //withCredentials([usernamePassword(credentialsId: "artifactory-${serviceName}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+            //    container('maven') {
+            //        sh "BUILD_TAG=${env.BUILD_TAG} mvn -s settings.xml --batch-mode clean deploy -Ddockerfile.username=${DOCKER_USERNAME} -Ddockerfile.password=${DOCKER_PASSWORD}"
+            //    }
+            //}
         }
         // Handle the PR build
         if (isPR) {
