@@ -67,7 +67,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
         // Build Stage
         stage('Build') {
                             container('cibuilder') {
-                                sh ("docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
+                                sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
                             }
         }
         // Handle the PR build
