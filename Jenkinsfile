@@ -25,10 +25,10 @@ def git_timeout = 2
 def preprodOnly = true
 
 podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
-    containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
+    //containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
     //containerTemplate(name: 'docker2', image: 'docker:17.10-dind', ttyEnabled: true, privileged: true),
-    containerTemplate(name: 'maven', image: 'maven:3.5-jdk-8', ttyEnabled: true, command: 'cat', args: ''),
-    containerTemplate(name: 'docker', image: 'docker:17.09', ttyEnabled: true, command: 'cat', args: '' ),
+    //containerTemplate(name: 'maven', image: 'maven:3.5-jdk-8', ttyEnabled: true, command: 'cat', args: ''),
+    //containerTemplate(name: 'docker', image: 'docker:17.09', ttyEnabled: true, command: 'cat', args: '' ),
     containerTemplate(name: 'argocd', image: 'argoproj/argocd-cli:v0.4.7', ttyEnabled: true, command: 'cat', args: '' ),
     containerTemplate(name: 'cdtools', image: 'argoproj/argo-cd-tools:0.1.12', ttyEnabled: true, command: 'cat', args: ''),
     ],
@@ -65,11 +65,6 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
 //                            container('cibuilder') {
 //                                sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
 //                            }
-            //withCredentials([usernamePassword(credentialsId: "artifactory-${serviceName}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
-            //    container('maven') {
-            //        sh "BUILD_TAG=${env.BUILD_TAG} mvn -s settings.xml --batch-mode clean deploy -Ddockerfile.username=${DOCKER_USERNAME} -Ddockerfile.password=${DOCKER_PASSWORD}"
-            //    }
-            //}
 //        }
         // Handle the PR build
         if (isPR) {
@@ -111,31 +106,13 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                                 sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path argocd --env ${env} --upsert"
                                 sh "/argocd app sync ${appName}-${env}"
                                 sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
+                                sh "curl -k https://${argocd_server_ppd} 2>&1 | grep -q \"<title>Argo CD</title>\""
                             }
-                            //container('cdtools') {
-                            //    sh "APP_NAME=${appName}-${env} ARGOCD_SERVER=\"https://${argocd_server_ppd}/api/v1\" USERNAME=admin PASSWORD=$ARGOCD_PASS HEALTH_URL_TEMPLATE=https://%s/health/full bash /usr/local/bin/ensure-service-up.sh"
-                            //}
+                            container('cdtools') {
+                                sh "curl -k https://${argocd_server_ppd} 2>&1 | grep -q \"<title>Argo CD</title>\""
+                            }
                         }
                     }
-                    // The QAL Test stage
-                    //stage("Test ${env}") {
-                    //    parallel (
-                    //        "1->Test 1": {
-                    //            container('maven') {
-                    //                sh "echo Test 1"
-                    //            }
-                    //        },
-                    //        "1->Test 2": {
-                    //            container('maven') {
-                    //                try {
-                    //                    sh "echo Test 2"
-                    //                } catch (err) {
-                    //                    echo "Error running Test 2: ${err}"
-                    //                }
-                    //            }
-                    //        }
-                    //    )
-                    //} // Test
                 }
                 milestone()
             }
@@ -188,25 +165,6 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                         }
                     }
                 }
-                // The STG Test stage
-                stage("Test ${env}") {
-                    parallel (
-                        "1->Test 1": {
-                            container('maven') {
-                                sh "echo Test 1"
-                            }
-                        },
-                        "1->Test 2": {
-                            container('maven') {
-                                try {
-                                    sh "echo Test 2"
-                                } catch (err) {
-                                    echo "Error running Test 2: ${err}"
-                                }
-                            }
-                        }
-                    )
-                } // Test 
             }
             milestone()
         }
