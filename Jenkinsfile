@@ -13,6 +13,7 @@ def deploy_repo = "github.intuit.com/dev-devx/cdp-deployments.git"
 def sample_app_deploy_repo = "github.intuit.com/sbseg-cdp/k8s-sample-app-deployment.git"
 def tag = ""
 def registry = "docker.artifactory.a.intuit.com"
+def registry_path = "dev/deploy/argocd/service"
 def image = "${repo}/${serviceName}"
 def app_wait_timeout = 600
 def prd_diff_msg = ""
@@ -62,13 +63,14 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
         def scmInfo = checkout scm
         def shortCommit = "${scmInfo.GIT_COMMIT}"[0..6]
         tag = "${env.BUILD_TAG}-${shortCommit}"
-        def hasReleaseTag = sh(returnStdout: true, script: 'git tag --points-at HEAD').trim().startsWith('release-')
 
         // Build Stage
         stage('Build') {
-                            container('cibuilder') {
-                                sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
-                            }
+            withCredentials([usernamePassword(credentialsId: "artifactory-${serviceName}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                container('cibuilder') {
+                   sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image DOCKER_PUSH=true IMAGE_NAMESPACE=${registry}/${registry_path}/argocd IMAGE_TAG=latest")
+                }
+            }
         }
         // Handle the PR build
         if (isPR) {
