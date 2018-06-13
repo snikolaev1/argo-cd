@@ -4,15 +4,12 @@ def l1 = 'dev'
 def l2 = 'devx'
 def serviceName = 'argocd'
 def region = 'us-west-2'
-def iksType = 'preprod'
-def appName = "${l1}-${l2}-${serviceName}-${region}-${iksType}"
 def deployable_branches = ["master"]
-def argocd_server_admin = "aac963bf86dd111e887a30a00e274fcb-1107323148.us-west-2.elb.amazonaws.com:443"
-def argocd_password_admin = "argocd-admin"
 def kson_compnt= "sample"
 def ptNameVersion = "${serviceName}-${UUID.randomUUID().toString().toLowerCase()}"
 def repo = "dev/patterns/shivang-test-service-20/service"
 def deploy_repo = "github.intuit.com/dev-devx/cdp-deployments.git"
+def sample_app_deploy_repo = "github.intuit.com:sbseg-cdp/k8s-sample-app-deployment.git"
 def tag = ""
 def registry = "docker.artifactory.a.intuit.com"
 def image = "${repo}/${serviceName}"
@@ -22,7 +19,11 @@ def stage_timeout = 20
 def git_timeout = 2
 def preprodOnly = true
 
-// Test Preprod
+// Admin
+def argocd_server_admin = "aac963bf86dd111e887a30a00e274fcb-1107323148.us-west-2.elb.amazonaws.com:443"
+def argocd_password_admin = "argocd-admin"
+// Preprod
+def iksType_preprod = 'preprod'
 def argocd_server_preprod = "a3e82f0766f2911e8852f0677f8541ce-1604782097.us-west-2.elb.amazonaws.com:443"
 def argocd_password_preprod = "argocd-preprod"
 
@@ -84,6 +85,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
             lock(resource: "${appName}-${env}", inversePrecedence: true) {
                 timeout(time:"${stage_timeout}".toInteger(), unit:'MINUTES') {
                     // The Preprod Deploy stage
+                    def appName = "${l1}-${l2}-${serviceName}-${region}-${iksType_preprod}"
                     stage( "Deploy ${env}" ) {
                         withCredentials([string(credentialsId: "${argocd_password_admin}", variable: 'ARGOCD_PASS')]) {
                             container('argocd') {
@@ -104,8 +106,8 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                                 //        }
                                 //    }
                                 //}
-                                sh ("/argocd login ${argocd_server_admin} --name context --insecure  --username admin --password $ARGOCD_PASS")
-                                sh "/argocd install settings --superuser-password ${argocd_server_preprod} -n ${appName}-${env} --update-superuser"
+                                sh "/argocd login ${argocd_server_admin} --name ${argocd_server_admin} --insecure  --username admin --password $ARGOCD_PASS"
+                                //sh "/argocd install settings --superuser-password ${argocd_password_preprod} -n ${appName}-${env} --update-superuser"
                                 sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path argocd --env ${env} --upsert"
                                 sh "/argocd app sync ${appName}-${env}"
                                 sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
@@ -116,10 +118,11 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                         }
                     }
                     // The Preprod Test stage
+                    def appName = "${l1}-${l2}-sample-app-${region}-${iksType_preprod}"
                     stage( "test ${env}" ) {
                         withCredentials([string(credentialsId: "${argocd_password_preprod}", variable: 'ARGOCD_PASS')]) {
                             container('argocd') {
-                                println("Deploying to ${appName}")
+                                println("test to ${appName}")
                                 //withCredentials([usernamePassword(credentialsId: 'github-svc-sbseg-ci', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
                                 //    dir("deployment-${env}-${tag}") {
                                 //        git url: "https://${deploy_repo}", credentialsId: "github-svc-sbseg-ci"
@@ -136,8 +139,8 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                                 //        }
                                 //    }
                                 //}
-                                sh ("/argocd login ${argocd_server_preprod} --name context --insecure  --username admin --password $ARGOCD_PASS")
-                                sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path argocd --env ${env} --upsert"
+                                sh "/argocd login ${argocd_server_preprod} --name ${argocd_server_preprod} --insecure  --username admin --password $ARGOCD_PASS"
+                                sh "/argocd app create --name ${appName}-${env} --repo https://${sample_app_deploy_repo} --path . --env qal --upsert"
                                 sh "/argocd app sync ${appName}-${env}"
                                 sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
                             }
