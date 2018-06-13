@@ -7,10 +7,8 @@ def region = 'us-west-2'
 def iksType = 'preprod'
 def appName = "${l1}-${l2}-${serviceName}-${region}-${iksType}"
 def deployable_branches = ["master"]
-def argocd_server_ppd = "aac963bf86dd111e887a30a00e274fcb-1107323148.us-west-2.elb.amazonaws.com:443"
-def argocd_server_prd = "aac963bf86dd111e887a30a00e274fcb-1107323148.us-west-2.elb.amazonaws.com:443"
-def argocd_password_ppd = "argocd-${serviceName}"
-def argocd_password_prd = "argocd-${serviceName}"
+def argocd_server_admin = "aac963bf86dd111e887a30a00e274fcb-1107323148.us-west-2.elb.amazonaws.com:443"
+def argocd_password_admin = "argocd-admin"
 def kson_compnt= "sample"
 def ptNameVersion = "${serviceName}-${UUID.randomUUID().toString().toLowerCase()}"
 def repo = "dev/patterns/shivang-test-service-20/service"
@@ -23,6 +21,10 @@ def prd_diff_msg = ""
 def stage_timeout = 20
 def git_timeout = 2
 def preprodOnly = true
+
+// Test Preprod
+def argocd_server_preprod = "a3e82f0766f2911e8852f0677f8541ce-1604782097.us-west-2.elb.amazonaws.com:443"
+def argocd_password_preprod = "argocd-preprod"
 
 podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
     //containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
@@ -83,7 +85,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                 timeout(time:"${stage_timeout}".toInteger(), unit:'MINUTES') {
                     // The Preprod Deploy stage
                     stage( "Deploy ${env}" ) {
-                        withCredentials([string(credentialsId: "${argocd_password_ppd}", variable: 'ARGOCD_PASS')]) {
+                        withCredentials([string(credentialsId: "${argocd_password_admin}", variable: 'ARGOCD_PASS')]) {
                             container('argocd') {
                                 println("Deploying to ${appName}")
                                 //withCredentials([usernamePassword(credentialsId: 'github-svc-sbseg-ci', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
@@ -102,13 +104,45 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                                 //        }
                                 //    }
                                 //}
-                                sh ("/argocd login ${argocd_server_ppd} --name context --insecure  --username admin --password $ARGOCD_PASS")
+                                sh ("/argocd login ${argocd_server_admin} --name context --insecure  --username admin --password $ARGOCD_PASS")
+                                sh "/argocd install settings --superuser-password ${argocd_server_preprod} -n ${appName}-${env} --update-superuser"
                                 sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path argocd --env ${env} --upsert"
                                 sh "/argocd app sync ${appName}-${env}"
                                 sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
                             }
                             container('cdtools') {
-                                sh "curl -k https://${argocd_server_ppd} 2>&1 | grep -q \"<title>Argo CD</title>\""
+                                sh "curl -k https://${argocd_server_preprod} 2>&1 | grep -q \"<title>Argo CD</title>\""
+                            }
+                        }
+                    }
+                    // The Preprod Test stage
+                    stage( "test ${env}" ) {
+                        withCredentials([string(credentialsId: "${argocd_password_preprod}", variable: 'ARGOCD_PASS')]) {
+                            container('argocd') {
+                                println("Deploying to ${appName}")
+                                //withCredentials([usernamePassword(credentialsId: 'github-svc-sbseg-ci', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                                //    dir("deployment-${env}-${tag}") {
+                                //        git url: "https://${deploy_repo}", credentialsId: "github-svc-sbseg-ci"
+                                //        sh "/usr/local/bin/ks param set ${kson_compnt} image ${registry}/${image}:${tag} --env $env"
+                                //        sh "git config --global user.email ${tag}@${ptNameVersion}"
+                                //        sh "git config --global user.name ${tag}"
+                                //        sh "git diff"
+                                //        sh "git commit -am \"update container for ${env} during build ${tag}\""
+                                //        lock("${deploy_repo}") {
+                                //            timeout(time:"${git_timeout}".toInteger(), unit:'MINUTES') {
+                                //                sh "git pull --rebase https://${GIT_USERNAME}:${GIT_PASSWORD}@${deploy_repo} master"
+                                //                sh "git push https://${GIT_USERNAME}:${GIT_PASSWORD}@${deploy_repo} master"
+                                //            }
+                                //        }
+                                //    }
+                                //}
+                                sh ("/argocd login ${argocd_server_preprod} --name context --insecure  --username admin --password $ARGOCD_PASS")
+                                sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path argocd --env ${env} --upsert"
+                                sh "/argocd app sync ${appName}-${env}"
+                                sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
+                            }
+                            container('cdtools') {
+                                sh "APP_NAME=${appName}-${env} ARGOCD_SERVER=\"https://${argocd_server_preprod}/api/v1\" USERNAME=admin PASSWORD=$ARGOCD_PASS HEALTH_URL_TEMPLATE=https://%s/health/full bash -x /usr/local/bin/ensure-service-up.sh"
                             }
                         }
                     }
@@ -135,7 +169,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
             timeout(time:"${stage_timeout}".toInteger(), unit:'MINUTES') {
                 // The STG Deploy stage
                 stage( "Deploy ${env}" ) {
-                    withCredentials([string(credentialsId: "${argocd_password_prd}", variable: 'ARGOCD_PASS')]) {
+                    withCredentials([string(credentialsId: "${argocd_password_admin}", variable: 'ARGOCD_PASS')]) {
                         container('argocd') {
                             println("Deploying to ${appName}")
                             withCredentials([usernamePassword(credentialsId: 'github-svc-sbseg-ci', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
@@ -154,13 +188,13 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                                     }
                                 }
                             }
-                            sh ("/argocd login ${argocd_server_prd} --name context --insecure  --username admin --password $ARGOCD_PASS")
+                            sh ("/argocd login ${argocd_server_admin} --name context --insecure  --username admin --password $ARGOCD_PASS")
                             sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path . --env ${env} --upsert"
                             sh "/argocd app sync ${appName}-${env}"
                             sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
                         }
                         container('cdtools') {
-                            sh "APP_NAME=${appName}-${env} ARGOCD_SERVER=\"https://${argocd_server_prd}/api/v1\" USERNAME=admin PASSWORD=$ARGOCD_PASS HEALTH_URL_TEMPLATE=https://%s/health/full bash -x /usr/local/bin/ensure-service-up.sh"
+                            sh "APP_NAME=${appName}-${env} ARGOCD_SERVER=\"https://${argocd_server_admin}/api/v1\" USERNAME=admin PASSWORD=$ARGOCD_PASS HEALTH_URL_TEMPLATE=https://%s/health/full bash -x /usr/local/bin/ensure-service-up.sh"
                         }
                     }
                 }
