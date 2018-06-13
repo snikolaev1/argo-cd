@@ -5,6 +5,7 @@ def l2 = 'devx'
 def serviceName = 'argocd'
 def region = 'us-west-2'
 def deployable_branches = ["master"]
+def appName = ""
 def kson_compnt= "sample"
 def ptNameVersion = "${serviceName}-${UUID.randomUUID().toString().toLowerCase()}"
 def repo = "dev/patterns/shivang-test-service-20/service"
@@ -81,11 +82,11 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
             // The first milestone step starts tracking concurrent build order
             milestone()
             def env = "preprod"
+            appName = "${l1}-${l2}-${serviceName}-${region}-${iksType_preprod}"
             // lock the Preprod Deploy and Test stages
             lock(resource: "${appName}-${env}", inversePrecedence: true) {
                 timeout(time:"${stage_timeout}".toInteger(), unit:'MINUTES') {
                     // The Preprod Deploy stage
-                    def appName = "${l1}-${l2}-${serviceName}-${region}-${iksType_preprod}"
                     stage( "Deploy ${env}" ) {
                         withCredentials([string(credentialsId: "${argocd_password_admin}", variable: 'ARGOCD_PASS')]) {
                             container('argocd') {
