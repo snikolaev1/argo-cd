@@ -141,6 +141,10 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                                 //    }
                                 //}
                                 sh "/argocd login ${argocd_server_preprod} --name ${argocd_server_preprod} --insecure  --username admin --password $ARGOCD_PASS"
+                                withCredentials([string(credentialsId: "svc_argocd", variable: 'ARGOCD_TOKEN')]) {
+                                    sh "/argocd repo add https://${sample_app_deploy_repo} --username svc_argocd --password $ARGOCD_TOKEN"
+                                    //sh "/argocd repo add https://${sample_app_deploy_repo} --username svc_argocd --password $ARGOCD_TOKEN 2>&1 | grep -q http"
+                                }
                                 sh "/argocd app create --name ${appName}-${env} --repo https://${sample_app_deploy_repo} --path . --env qal --upsert"
                                 sh "/argocd app sync ${appName}-${env}"
                                 sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
