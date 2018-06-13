@@ -68,7 +68,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
         stage('Build') {
             withCredentials([usernamePassword(credentialsId: "artifactory-${serviceName}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                 container('cibuilder') {
-                   sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image DOCKER_PUSH=true IMAGE_NAMESPACE=${registry}/${registry_path}/argocd IMAGE_TAG=latest")
+                   sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image DOCKER_PUSH=true IMAGE_NAMESPACE=${registry}/${registry_path} IMAGE_TAG=latest")
                 }
             }
         }
