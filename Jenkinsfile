@@ -36,10 +36,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
     containerTemplate(name: 'argocd', image: 'argoproj/argocd-cli:v0.4.7', ttyEnabled: true, command: 'cat', args: '' ),
     containerTemplate(name: 'cdtools', image: 'argoproj/argo-cd-tools:0.1.12', ttyEnabled: true, command: 'cat', args: ''),
     ],
-    volumes: [
-        hostPathVolume(hostPath: '/var/run/docker.sock', mountPath: '/var/run/docker.sock'),
-        emptyDirVolume(memory: false, mountPath: '/var/lib/docker')
-    ]
+    volumes: [ emptyDirVolume(memory: false, mountPath: '/var/lib/docker') ]
   )
 
 {
