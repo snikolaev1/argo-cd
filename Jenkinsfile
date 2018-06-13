@@ -29,14 +29,15 @@ def argocd_server_preprod = "a3e82f0766f2911e8852f0677f8541ce-1604782097.us-west
 def argocd_password_preprod = "argocd-preprod"
 
 podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
-    //containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
-    //containerTemplate(name: 'docker2', image: 'docker:17.10-dind', ttyEnabled: true, privileged: true),
+    containerTemplate(name: 'cibuilder', image: 'argoproj/argo-cd-ci-builder:latest', ttyEnabled: true, command: 'cat', args: ''),
+    containerTemplate(name: 'docker', image: 'docker:17-dind', ttyEnabled: true, alwaysPullImage: true, privileged: true, command: 'dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --storage-driver=overlay'),
     //containerTemplate(name: 'maven', image: 'maven:3.5-jdk-8', ttyEnabled: true, command: 'cat', args: ''),
     //containerTemplate(name: 'docker', image: 'docker:17.09', ttyEnabled: true, command: 'cat', args: '' ),
     containerTemplate(name: 'argocd', image: 'argoproj/argocd-cli:v0.4.7', ttyEnabled: true, command: 'cat', args: '' ),
     containerTemplate(name: 'cdtools', image: 'argoproj/argo-cd-tools:0.1.12', ttyEnabled: true, command: 'cat', args: ''),
     ],
-    volumes: [hostPathVolume(hostPath: '/var/run/docker.sock', mountPath: '/var/run/docker.sock')]
+    volumes: [hostPathVolume(hostPath: '/var/run/docker.sock', mountPath: '/var/run/docker.sock')],
+    volumes: [emptyDirVolume(memory: false, mountPath: '/var/lib/docker')]
   )
 
 {
@@ -65,11 +66,11 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
         def hasReleaseTag = sh(returnStdout: true, script: 'git tag --points-at HEAD').trim().startsWith('release-')
 
         // Build Stage
-//        stage('Build') {
-//                            container('cibuilder') {
-//                                sh ("export DOCKER_HOST=127.0.0.1; docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
-//                            }
-//        }
+        stage('Build') {
+                            container('cibuilder') {
+                                sh ("docker version; mkdir -p /go/src/github.com/argoproj; ln -sf \$(pwd) /go/src/github.com/argoproj/argo-cd ; cd /go/src/github.com/argoproj/argo-cd; dep ensure && make controller-image server-image repo-server-image")
+                            }
+        }
         // Handle the PR build
         if (isPR) {
             stage("Skipping Deploy") {
