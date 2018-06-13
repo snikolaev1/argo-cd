@@ -106,10 +106,10 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                                 sh "/argocd app create --name ${appName}-${env} --repo https://${deploy_repo} --path argocd --env ${env} --upsert"
                                 sh "/argocd app sync ${appName}-${env}"
                                 sh "/argocd app wait ${appName}-${env} --timeout ${app_wait_timeout}"
-                                sh "set -x; curl -k https://${argocd_server_ppd} 2>&1 | grep -q \"<title>Argo CD</title>\""
+                                sh "set -x; curl -vk https://${argocd_server_ppd} 2>&1 | grep -q \"<title>Argo CD</title>\""
                             }
                             container('cdtools') {
-                                sh "set -x; curl -k https://${argocd_server_ppd} 2>&1 | grep -q \"<title>Argo CD</title>\""
+                                sh "set -x; curl -vk https://${argocd_server_ppd} 2>&1 | grep -q \"<title>Argo CD</title>\""
                             }
                         }
                     }
