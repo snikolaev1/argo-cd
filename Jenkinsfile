@@ -118,7 +118,7 @@ podTemplate(name: ptNameVersion, label: ptNameVersion, containers: [
                         }
                     }
                     // The Preprod Test stage
-                    def appName = "${l1}-${l2}-sample-app-${region}-${iksType_preprod}"
+                    appName = "${l1}-${l2}-sample-app-${region}-${iksType_preprod}"
                     stage( "test ${env}" ) {
                         withCredentials([string(credentialsId: "${argocd_password_preprod}", variable: 'ARGOCD_PASS')]) {
                             container('argocd') {
