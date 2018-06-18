@@ -22,7 +22,7 @@ def git_timeout = 2
 def preprodOnly = true
 
 // Admin
-def argocd_server_admin = "a00611018730611e887a30a00e274fcb-80884673.us-west-2.elb.amazonaws.com:443"
+def argocd_server_admin = "a474b72bf730811e8bd130234302828e-667024724.us-west-2.elb.amazonaws.com:443"
 def argocd_password_admin = "argocd-admin"
 // Preprod
 def iksType_preprod = 'preprod'
